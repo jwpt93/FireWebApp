@@ -161,6 +161,49 @@ Fig 8 envelope.
 
 ---
 
+## Tests
+
+The full outdoor test suite is vendored in `tests/outdoor/`. Run:
+
+```bash
+OMP_NUM_THREADS=8 NUMBA_NUM_THREADS=8 MKL_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 \
+  python -m pytest tests/outdoor/ -q --tb=line
+```
+
+Expected: **354 passed, 41 failed** (~3 min).
+
+The 41 failures are pre-existing test-infra drift inherited from the
+parent `unitiedmodel2` repo — test helpers haven't kept up with
+recent kernel signature changes, so tests calling
+`step_bed_particles` and similar fail with `not enough arguments`.
+These are NOT regressions from the extraction; running the same tests
+in the parent gives the same 41 failures.
+
+**Cheney-critical subset** (132 tests, ~6 s, all pass):
+
+```bash
+python -m pytest \
+  tests/outdoor/test_empirical_ros_marsden_smedley.py \
+  tests/outdoor/test_boundary_condition_registry.py \
+  tests/outdoor/test_chemistry_family_override.py \
+  tests/outdoor/test_edc_0d_adiabatic_validation.py \
+  tests/outdoor/test_fft_poisson_3d.py \
+  tests/outdoor/test_projection_3d_determinism.py \
+  tests/outdoor/test_projection_3d_fft_pcg.py \
+  tests/outdoor/test_dom_moisture.py \
+  tests/outdoor/test_moisture_jump_bc.py \
+  tests/outdoor/test_level_set_fsd.py \
+  tests/outdoor/test_flame_front_3d_forcing.py \
+  -q
+```
+
+These cover: Tier 1 (empirical Cheney/M-S), deck-loading + BC
+registry, chemistry family dispatch, EDC closure 0D, Rule #17
+bit-exact projection determinism, DOM moisture radiation, moisture-jump
+BC (10 unit tests), level-set FSD closure, and 3D flame-front forcing.
+
+---
+
 ## Attribution
 
 Reduced-order fire spread models developed in the `unitiedmodel2`

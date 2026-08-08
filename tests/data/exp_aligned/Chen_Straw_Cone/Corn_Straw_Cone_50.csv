@@ -1,0 +1,35 @@
+# Chen, X. et al. (2021). Fire behavior characteristics of crop straw.
+# Materials 14(12):3407. doi:10.3390/ma14123407. Open access (PMC8234294).
+# Species: corn straw (Zea mays)
+# Flux: 50 kW/m², ISO 5660, spark ignition
+# Sample: 60 g in 100x100x35 mm holder, MC=8.15% (as-received basis)
+# Designation: VALIDATION — transferred kinetics; Rule #2: no re-tuning
+# Acceptance bands (Rule #3, declared before running):
+#   peak R/E: 0.70–1.30,  avg R/E (30–300 s): 0.70–1.30
+# Data source: approximated from Table 3 scalar anchors (Figure 2a not
+#   machine-readable from PMC HTML). Anchor points from Table 3:
+#   TTI=10s, PHRR=167 kW/m² at t=13s, THR_900=57 MJ/m²
+#   Decay shape: wheat straw analogy scaled ×1.06 to match THR integral.
+#   Uncertainty: ±10 kW/m² (higher than wheat/rice; reconstruction not digitization)
+Time [s],HRRPUA [kW/m²]
+0,0
+10,0
+12,55
+13,167
+15,155
+20,142
+25,125
+30,95
+40,87
+60,81
+90,76
+120,74
+180,70
+270,66
+360,61
+450,58
+540,57
+630,55
+720,56
+810,58
+900,60

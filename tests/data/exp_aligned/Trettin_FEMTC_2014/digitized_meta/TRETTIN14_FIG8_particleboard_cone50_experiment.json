@@ -1,0 +1,35 @@
+{
+  "source_id": "SRC-2026-009",
+  "figure": "Figure 8",
+  "page": 5,
+  "curve_label": "Particle board cone experiment (50 kW/m2)",
+  "x_units": "s",
+  "y_units": "kW/m2",
+  "digitized_by": "codex",
+  "digitized_date_utc": "2026-02-23T23:05:00Z",
+  "digitization_status": "complete",
+  "estimated_digitization_uncertainty": "high (manual digitization from pasted Figure 8 image, not WebPlotDigitizer on original PDF); expected ~10-20 kW/m2 local amplitude uncertainty and ~10-20 s timing uncertainty",
+  "axis_calibration_points": [
+    {
+      "axis": "x",
+      "point_description": "manual visual calibration using lower panel x-axis ticks",
+      "points_used": [
+        "left axis origin tick ~ 0 s",
+        "rightmost axis tick ~ 1000 s"
+      ]
+    },
+    {
+      "axis": "y",
+      "point_description": "manual visual calibration using lower panel right y-axis (HRRPUA) ticks",
+      "points_used": [
+        "top tick ~ 700 kW/m2",
+        "lower visible tick sequence ~100 kW/m2 spacing"
+      ]
+    }
+  ],
+  "notes": [
+    "Manual digitization was performed from the user-provided Figure 8 image in chat to enable secondary-validation A/B comparisons.",
+    "This should be replaced by WebPlotDigitizer extraction from the original PDF for publication-quality quantitative comparisons.",
+    "The current CSV is suitable for source-context tie-breaker / qualitative trend checks only."
+  ]
+}

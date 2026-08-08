@@ -1,0 +1,104 @@
+# DIGITIZED from: Trettin C., Hagemann P., Werrel M., Meinert M., Wittbecker F.W.
+# 'Influence of Input Parameters on the Fire Simulation'
+# FEMTC 2014, Gaithersburg MD, Sep 8-10 2014. Figure 8 (lower panel, EXP HRR solid line)
+# Specimen: Particle board, 16 mm thick, cone calorimeter, 50 kW/m² external flux
+# Time axis: t=0 = specimen exposure start (cone-on); ignition at ~60-70s
+# Calibration: right y-axis 0-700 kW/m², x-axis 0-1000s
+#   Scale: 0.935 kW/m²/pixel from anchor points y_px=598→100kW/m², y_px=705→0kW/m²
+# NOTE: initial peak (t=60-80s) partially obscured by legend box in figure;
+#   peak at t=68s (~395 kW/m²) is estimated by linear extrapolation from confirmed
+#   middle-cluster points at t=80s (322), t=90s (291), t=100s (255) kW/m².
+#   Uncertainty in peak: ±50 kW/m² (±13%).
+# Rule #9: No rescaling/shifting; direct digitization from figure with provenance.
+Time,HRRPUA
+0,0.0
+10,0.0
+20,0.0
+30,0.0
+40,0.0
+50,0.0
+60,0.0
+70,382.8
+80,322.0
+90,291.0
+100,255.0
+110,202.0
+120,151.0
+130,103.0
+140,52.0
+150,53.0
+160,54.6
+170,56.2
+180,57.8
+190,59.4
+200,61.0
+210,63.0
+220,65.0
+230,67.0
+240,69.0
+250,71.0
+260,73.0
+270,75.0
+280,77.0
+290,79.0
+300,81.0
+310,83.2
+320,85.4
+330,87.6
+340,89.8
+350,92.0
+360,94.2
+370,96.4
+380,98.6
+390,100.8
+400,103.0
+410,103.2
+420,103.4
+430,103.6
+440,103.8
+450,104.0
+460,104.0
+470,104.0
+480,104.0
+490,104.0
+500,104.0
+510,104.0
+520,104.0
+530,104.0
+540,104.0
+550,104.0
+560,103.8
+570,103.6
+580,103.4
+590,103.2
+600,103.0
+610,97.8
+620,92.6
+630,87.4
+640,82.2
+650,77.0
+660,71.8
+670,66.6
+680,61.4
+690,56.2
+700,51.0
+710,47.4
+720,43.8
+730,40.2
+740,36.6
+750,33.0
+760,29.6
+770,26.2
+780,22.8
+790,19.4
+800,16.0
+810,13.8
+820,11.6
+830,9.4
+840,7.2
+850,5.0
+860,4.0
+870,3.0
+880,2.0
+890,1.0
+900,0.0

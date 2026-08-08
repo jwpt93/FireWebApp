@@ -24,3 +24,7 @@ dev = ["pytest>=7"]
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["model*", "model_outdoor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=line"

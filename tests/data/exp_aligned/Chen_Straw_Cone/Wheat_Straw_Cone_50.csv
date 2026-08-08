@@ -1,0 +1,32 @@
+# Chen, X. et al. (2021). Fire behavior characteristics of crop straw.
+# Materials 14(12):3407. doi:10.3390/ma14123407. Open access (PMC8234294).
+# Species: wheat straw (Triticum aestivum)
+# Flux: 50 kW/m², ISO 5660, spark ignition
+# Sample: 60 g in 100x100x35 mm holder, MC=6.1% (dry basis)
+# Designation: CALIBRATION (wheat straw 50 kW/m²) — per Rule #2
+# Acceptance bands (Rule #3, declared before running):
+#   peak R/E: 0.70–1.30,  avg R/E (30–300 s): 0.70–1.30
+# Data source: digitized from Figure 3(a); uncertainty ±5 kW/m²
+# Scalar anchors from Table 3: TTI=7s, peak=114 kW/m² at t=17s, THR900=55 MJ/m²
+Time [s],HRRPUA [kW/m²]
+0,0
+7,0
+10,40
+15,95
+17,114
+20,110
+25,100
+30,90
+40,82
+60,76
+90,72
+120,70
+180,66
+270,62
+360,58
+450,55
+540,54
+630,52
+720,53
+810,55
+900,57

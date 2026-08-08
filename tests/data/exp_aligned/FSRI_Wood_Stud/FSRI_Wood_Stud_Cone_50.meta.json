@@ -1,0 +1,81 @@
+{
+  "source_id": "SRC-2026-012",
+  "dataset": "FSRI_Wood_Stud",
+  "material_dir": "Wood_Stud",
+  "flux_kW_m2": 50,
+  "fsri_root": "validation_datasets/fsri_materials_database-main",
+  "fsri_local_commit": "ef4c99b0074c63e65dad4a91d385567c267ef9f7",
+  "generated_utc": "2026-02-24T18:07:28.528072+00:00",
+  "hrr_summary_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_HRRPUA_50.csv",
+  "output_csv": "tests/data/exp_aligned/FSRI_Wood_Stud/FSRI_Wood_Stud_Cone_50.csv",
+  "columns": [
+    "Time",
+    "HRRPUA",
+    "MLR",
+    "HRRPUA_STD",
+    "MLR_STD"
+  ],
+  "mlr_enabled": true,
+  "mlr_derivation": {
+    "method": "sample_mass_derivative_from_raw_cone_scan",
+    "smoothing_pre_derivative": true,
+    "derivative_operator": "numpy.gradient",
+    "negative_noise_clamp": "clamp < 0 to 0",
+    "align_to_hrr_grid": "numpy.interp on Time after Ignition",
+    "smoothing_window": 9,
+    "savgol_polyorder": 2
+  },
+  "replicates": [
+    {
+      "scan_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_Cone_HF50Scan_221004_R1.csv",
+      "scalar_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_Cone_HF50Scalar_221004_R1.csv",
+      "area_m2": 0.009999999776482582,
+      "area_source": "scalar_SURF_AREA",
+      "smoothing_method": "savgol",
+      "smoothing_window": 9,
+      "savgol_polyorder": 2,
+      "warnings": [],
+      "scan_time_range_s": [
+        0.0,
+        2597.0
+      ],
+      "replicate": 1,
+      "used": true
+    },
+    {
+      "scan_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_Cone_HF50Scan_221004_R2.csv",
+      "scalar_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_Cone_HF50Scalar_221004_R2.csv",
+      "area_m2": 0.009999999776482582,
+      "area_source": "scalar_SURF_AREA",
+      "smoothing_method": "savgol",
+      "smoothing_window": 9,
+      "savgol_polyorder": 2,
+      "warnings": [],
+      "scan_time_range_s": [
+        0.0,
+        2372.25
+      ],
+      "replicate": 2,
+      "used": true
+    },
+    {
+      "scan_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_Cone_HF50Scan_221004_R3.csv",
+      "scalar_file": "validation_datasets/fsri_materials_database-main/01_Data/Wood_Stud/Cone/Wood_Stud_Cone_HF50Scalar_221004_R3.csv",
+      "area_m2": 0.009999999776482582,
+      "area_source": "scalar_SURF_AREA",
+      "smoothing_method": "savgol",
+      "smoothing_window": 9,
+      "savgol_polyorder": 2,
+      "warnings": [],
+      "scan_time_range_s": [
+        0.0,
+        2567.0
+      ],
+      "replicate": 3,
+      "used": true
+    }
+  ],
+  "warnings": [
+    "No local FSRI HTML-derived emissivity/EHC tables available in this clone; deck fallbacks may still be used elsewhere."
+  ]
+}

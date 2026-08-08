@@ -1,0 +1,31 @@
+# Chen, X. et al. (2021). Fire behavior characteristics of crop straw.
+# Materials 14(12):3407. doi:10.3390/ma14123407. Open access (PMC8234294).
+# Species: rice straw (Oryza sativa)
+# Flux: 50 kW/m², ISO 5660, spark ignition
+# Sample: 60 g in 100x100x35 mm holder, MC=7.5% (dry basis)
+# Designation: VALIDATION (rice straw 50 kW/m²) — per Rule #2
+# Acceptance bands (Rule #3, declared before running):
+#   peak R/E: 0.70–1.30,  avg R/E (30–300 s): 0.70–1.30
+# Data source: digitized from Figure 3(a); uncertainty ±5 kW/m²
+# Scalar anchors from Table 3: TTI=8s, peak=104 kW/m² at t=21s, THR900=46 MJ/m²
+Time [s],HRRPUA [kW/m²]
+0,0
+8,0
+12,35
+18,90
+21,104
+25,95
+30,85
+40,75
+60,68
+90,64
+120,60
+180,57
+270,54
+360,51
+450,47
+540,44
+630,43
+720,43
+810,45
+900,47

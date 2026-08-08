@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     Cheney 1993 Cut grass, M=4%, U=0.5 m/s
+# Geometry:     12m × 0.5m (periodic Y) × 8m, dx=0.05m
+# Designation:  PHASE 18 SCOUT v8 — h_conv=1000 + nu_t_multiplier=4
+#
+# Combined C + high-ν_t: faster bed convective coupling AND broader
+# gas-phase heat transport.  Two-shoulder version of Path B.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+t_end = 15
+
+outdoor.Lx              = 12.0
+outdoor.Ly              = 0.5
+outdoor.Lz              = 8.0
+outdoor.dx              = 0.05
+outdoor.dy              = 0.10
+outdoor.n_z_bed         = 4
+outdoor.bed_x_start     = 1.0
+outdoor.bed_x_end       = 9.0
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 1.0
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.10
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04
+outdoor.wind_speed_m_s     = 0.5
+
+outdoor.turbulence_model   = k_epsilon
+outdoor.wall_function      = false
+outdoor.combustion_closure = edc
+outdoor.radiation_solver   = dom
+outdoor.dom_subcycle_every = 5
+outdoor.projection_method  = fft_pcg
+outdoor.cfl_factor         = 0.40
+
+outdoor.nu_t_multiplier    = 4.0
+
+outdoor.lagrangian_bed_enable     = true
+outdoor.lagrangian_bed_N_per_cell = 20
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv     = 1000.0
+outdoor.lagrangian_bed_view_factor_geometric = true
+
+outdoor.level_set_passive    = true
+
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = true
+outdoor.ignition_T_pin_K     = 1500.0
+outdoor.ignition_T_pin_height_m = 0.30
+outdoor.ignition_T_pin_ramp_s = 0.5
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 3.0
+
+outdoor.max_wall_time_s      = 15.0
+outdoor.min_dt_s             = 1.0e-4
+
+outdoor.edc_extinction_enable    = false
+outdoor.finney_tendril_enable    = false

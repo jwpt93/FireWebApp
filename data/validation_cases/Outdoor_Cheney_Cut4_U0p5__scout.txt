@@ -1,0 +1,109 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     Cheney 1993 Cut grass, M=4%, U=0.5 m/s
+# Geometry:     15m × 0.5m (periodic Y) × 8m, dx=0.05m (scout)
+# Designation:  PHASE 18 SCOUT v4 — τ_burnout hypothesis test
+#
+# Hypothesis (user, 2026-06-28): low-U failure is a Da/timescale issue.
+#   At low U, τ_burnout_source ≫ τ_bridge_downstream, so source patch dies
+#   before propagation chain establishes.  If true, a fuel bed with smaller
+#   τ_burnout (thinner h_bed → less mass per cell) should propagate at U=0.5
+#   where Nat (h_bed=0.37 m) fails.
+#
+#   Cut grass has h_bed=0.10 m vs Nat 0.37 m — 3.7× less mass per cell, so
+#   τ_burnout should be ~3.7× smaller.  Same M=4%, same U=0.5, same closure
+#   (k-ε), same dx — only the fuel depth differs.
+#
+# Falsifier:
+#   - If Cut U=0.5 propagates → hypothesis CONFIRMED; "model limit" is
+#     a τ_burnout·U/dx ratio threshold, not just "U > 2 m/s".
+#   - If Cut U=0.5 also fails → hypothesis weaker; low-U limit is more
+#     intrinsic to our closure (RANS averages away intermittent contact
+#     regardless of fuel mass).
+#
+# Calibration vs validation:
+#   This is a SCOUT (no acceptance band — qualitative go/no-go).
+#
+# Parameter sources:
+#   Mesh dx=0.05 (compromise scout, Phase 17f canonical is 0.025 for U=0.5):
+#       2× coarser than rule for tractable wall time; cell-residence still
+#       sufficient for k-ε mixing per Phase 17f cell-residence analysis.
+#   Cut grass bed (rho=1.07, h=0.10, sav=2000): Phase 14ax / Phase 15O Step 6
+#       convention (Cheney 1993 Cut grass).  See _cheney_phase16_worker.py
+#       BED dict for canonical values.
+#   M=4%, U=0.5:  Cheney 1993 Fig 8 Cut-4% wind bin.
+#   Lagrangian bed:  Phase 16 (commit daf9023).
+#
+# References:
+#   Cheney, N.P. et al. (1993) IJWF 3:31.
+#   Phase 17f commit 7b8276f (dx-vs-U mesh rule + low-U closure limit).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Simulation control ────────────────────────────────────────────────────────
+t_end = 15
+
+# ── Domain (dx=0.05 scout — 2× coarser than Phase 17f rule for U=0.5) ─────────
+outdoor.Lx              = 12.0
+outdoor.Ly              = 0.5
+outdoor.Lz              = 8.0
+outdoor.dx              = 0.05
+outdoor.dy              = 0.10
+outdoor.n_z_bed         = 4              # h_bed=0.10 / 4 → dz_bed=0.025m (aspect 2:1 to dx)
+outdoor.bed_x_start     = 1.0
+outdoor.bed_x_end       = 9.0
+
+# Mesh stretching above bed
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 1.0
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+# Fuel bed (Cheney 1993 Cut grass — h_bed THINNER than Nat)
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.10        # ← KEY: Cut bed is ~3.7× thinner than Nat (0.37 m)
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04    # M=4%
+
+# Wind
+outdoor.wind_speed_m_s     = 0.5
+
+# Turbulence: k-ε (Phase 17f production — same closure as failing Nat case)
+outdoor.turbulence_model   = k_epsilon
+outdoor.wall_function      = false
+
+# Combustion + radiation (Phase 17f production)
+outdoor.combustion_closure    = edc
+outdoor.radiation_solver      = dom
+outdoor.dom_subcycle_every    = 5
+outdoor.projection_method     = fft_pcg
+outdoor.cfl_factor            = 0.40
+
+# Bed: Lagrangian (Phase 16)
+outdoor.lagrangian_bed_enable     = true
+outdoor.lagrangian_bed_N_per_cell = 20
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv     = 250.0
+outdoor.lagrangian_bed_view_factor_geometric = true
+
+# Phase 17c: passive level-set
+outdoor.level_set_passive    = true
+
+# Ignition (matches Phase 17f worker)
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = true
+outdoor.ignition_T_pin_K     = 1500.0
+outdoor.ignition_T_pin_height_m = 0.30
+outdoor.ignition_T_pin_ramp_s = 0.5
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 3.0          # match Phase 17f worker
+
+# Run-time controls
+outdoor.max_wall_time_s      = 15.0
+outdoor.min_dt_s             = 1.0e-4
+
+# Disabled features
+outdoor.edc_extinction_enable    = false
+outdoor.finney_tendril_enable    = false

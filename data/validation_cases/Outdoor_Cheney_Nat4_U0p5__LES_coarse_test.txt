@@ -1,0 +1,104 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     Cheney 1993 Nat grass, M=4%, U=0.5 m/s
+# Geometry:     15m × 1.0m (periodic Y) × 8m, dx=dy=0.25m (Catchpole lit-pattern Δ)
+# Designation:  PHASE 18 SCOUT v3 — COARSE LES (Catchpole-lit-pattern Δ)
+#               Question: does coarse Smagorinsky (sub-grid nu_t ~ k-ε scale)
+#               + SEM bootstrap propagation at U=0.5 m/s where fine LES burned
+#               through too fast?
+#
+#               At Δ=0.25 (vs scout v2 Δ=0.05), Smagorinsky nu_t scales as Δ²,
+#               so sub-grid mixing is ~25x larger here.  This brings LES into
+#               the "sub-grid model active" regime that the Catchpole
+#               lit-pattern test demonstrated fixes plume reversal.
+#
+# Calibration vs validation:
+#   This is a SCOUT (no acceptance band — qualitative go/no-go for whether
+#   the coarse-LES regime bootstraps low-U Cheney).
+#
+# Parameter sources:
+#   Mesh + LES + SEM:           Mell 2007, Moinuddin 2018, Innocent 2023.
+#   Sub-grid bed (n_z_bed=1):   HIGRAD/FIRETEC (Jonko 2021).
+#   Bed material (Nat grass):   Phase 14ax canonical.
+#   M=4%, U=0.5:                Cheney 1993 Fig 8.
+#
+# References:
+#   Cheney, N.P. et al. (1993) IJWF 3:31.
+#   Mell, W. et al. (2007) IJWF 16:1.
+#   Innocent, J. et al. (2023) Fire 6:406.
+#   Jonko, A.K. et al. (2021) JGR-A 126:e2020JD033384.
+#   Jarrin, N. et al. (2008) Int. J. Heat Fluid Flow 27:585.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Simulation control ────────────────────────────────────────────────────────
+t_end = 15
+
+# ── Domain (Catchpole-lit-pattern Δ for "LES sub-grid model active" regime) ───
+outdoor.Lx              = 15.0          # match Phase 17f rule Lx for U=0.5
+outdoor.Ly              = 1.0           # Ny=4 — avoid small-grid CSR-map bug
+outdoor.Lz              = 8.0
+outdoor.dx              = 0.25
+outdoor.dy              = 0.25
+outdoor.n_z_bed         = 1.0           # sub-grid bed (lit-pattern; float to avoid bool-parse)
+outdoor.bed_x_start     = 1.0
+outdoor.bed_x_end       = 12.0
+
+# Mesh stretching above bed
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 0.5
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+# Fuel bed (Cheney 1993 Nat grass)
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.37
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04    # M=4%
+
+# Wind
+outdoor.wind_speed_m_s     = 0.5
+
+# Turbulence: LES Smagorinsky (sub-grid model ACTIVE at this Δ)
+outdoor.turbulence_model   = smagorinsky
+
+# Inflow turbulence: SEM (Innocent 2023 WFDS pattern)
+outdoor.sem_enable         = true
+outdoor.sem_I_t            = 0.20
+outdoor.sem_N              = 200
+outdoor.sem_seed           = 42
+
+# Combustion + radiation
+outdoor.combustion_closure    = edc
+outdoor.radiation_solver      = dom
+outdoor.dom_subcycle_every    = 5
+outdoor.projection_method     = amg_cg     # coarse mesh — avoid FFT-PCG CSR-map bug
+outdoor.cfl_factor            = 0.40
+
+# Bed: Lagrangian particles concentrated in single sub-grid cell.
+outdoor.lagrangian_bed_enable    = true
+outdoor.lagrangian_bed_N_per_cell = 100
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv    = 250.0
+
+# Phase 17c: passive level-set
+outdoor.level_set_passive    = true
+
+# Ignition: solid-phase seed + brief gas pin.
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = true
+outdoor.ignition_T_pin_K     = 1500.0
+outdoor.ignition_T_pin_height_m = 0.30
+outdoor.ignition_T_pin_ramp_s = 0.5
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 4.0          # 2m source patch (vs 1.5m at fine dx)
+
+# Run-time controls
+outdoor.max_wall_time_s      = 15.0
+outdoor.min_dt_s             = 1.0e-4
+
+# Disabled features
+outdoor.edc_extinction_enable    = false
+outdoor.finney_tendril_enable    = false

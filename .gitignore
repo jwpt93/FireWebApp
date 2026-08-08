@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Simulation outputs
+local/
+plots/
+*.npz
+*.gif
+*.mp4
+*.png
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Numba cache
+.numba_cache/

@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     Cheney 1993 Nat grass, M=4%, U=4 m/s
+# Geometry:     40m × 0.5m (periodic Y) × 8m, dx=0.10m (Phase 17f rule for U=4)
+# Designation:  PHASE 18 REGRESSION — in-bed pin at U=4 production case
+#
+# Purpose (Rule #16):  the in-bed pin candidate fix needs to be validated
+# against the production U=4 case before it can be considered safe to flip
+# the default.  Phase 14ax + Phase 17f cases at U=4 are 18/20 PASS Cheney
+# baseline.  If in-bed pin breaks this, we have a tradeoff to reckon with.
+#
+# Expected outcome:
+#   - If ROS_Ts matches Phase 17f baseline (~36 m/min, eq.6 ratio ~0.69):
+#     in-bed pin is benign at high-U → safe to flip default
+#   - If ROS_Ts differs significantly: ignition position matters even at
+#     high U, need to reconsider the physical case
+# ═══════════════════════════════════════════════════════════════════════════════
+
+t_end = 15
+
+outdoor.Lx              = 40.0
+outdoor.Ly              = 0.5
+outdoor.Lz              = 8.0
+outdoor.dx              = 0.10
+outdoor.dy              = 0.10
+outdoor.n_z_bed         = 8
+outdoor.bed_x_start     = 2.0
+outdoor.bed_x_end       = 37.0
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 1.0
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+# Cheney 1993 Nat grass (NOT Cut)
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.37
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04
+outdoor.wind_speed_m_s     = 4.0
+
+outdoor.turbulence_model   = k_epsilon
+outdoor.wall_function      = false
+outdoor.combustion_closure = edc
+outdoor.radiation_solver   = dom
+outdoor.dom_subcycle_every = 5
+outdoor.projection_method  = fft_pcg
+outdoor.cfl_factor         = 0.40
+
+outdoor.lagrangian_bed_enable     = true
+outdoor.lagrangian_bed_N_per_cell = 20
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv     = 250.0
+outdoor.lagrangian_bed_view_factor_geometric = true
+
+outdoor.level_set_passive    = true
+
+# In-bed pin (the fix being tested)
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = true
+outdoor.ignition_T_pin_K     = 1500.0
+outdoor.ignition_T_pin_height_m = 0.30
+outdoor.ignition_T_pin_ramp_s = 0.5
+outdoor.ignition_T_pin_in_bed = true        # ← NEW: pin INSIDE bed
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 3.0
+
+outdoor.max_wall_time_s      = 15.0
+outdoor.min_dt_s             = 1.0e-4
+
+outdoor.edc_extinction_enable    = false
+outdoor.finney_tendril_enable    = false

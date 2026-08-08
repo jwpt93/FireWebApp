@@ -1,0 +1,97 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     Cheney 1993 Nat grass, M=4%, U=0.5 m/s
+# Geometry:     15m × 0.5m (periodic Y) × 8m, dx=0.05m (scout)
+# Designation:  PHASE 19 SCOUT — empirical-ROS hybrid (Cheney Eq.6 fallback)
+#
+# Test of the new `empirical_ros_*` deck flags introduced for Phase 19.
+# At U=0.5 m/s, well below the 1.4 m/s Cheney 1998 quasi-steady cutoff,
+# the empirical Cheney Eq.6 ROS should dominate (blend weight ≈ 1).
+# Predicted ROS_Ts ≈ 6.7 m/min (eq.6 ref at Nat 4% U=0.5).
+#
+# Why this is needed:  Phase 18 bug-sweep (commit c16371b) showed that
+# resolved RANS+EDC cannot bridge the source-patch at U≤1.  Per Finney
+# 2015 PNAS, real low-U fires propagate via intermittent flame-tongue
+# variance that mean-field closures structurally cannot represent.
+# This deck tests the WRF-Fire / CAWFE / PHOENIX pattern of imposing
+# empirical ROS at the level-set front in the regime where resolved
+# physics cannot.
+#
+# Calibration vs validation:
+#   This is a SCOUT (no acceptance band — qualitative go/no-go on whether
+#   the hybrid produces sensible bed propagation behind the prescribed
+#   front speed).
+#
+# Parameter sources:
+#   Cheney 1998 IJWF 8:1 — Eq. 6 (a_ch=0.406 for Nat grass) + 5 km/h
+#       quasi-steady cutoff.
+#   WRF-Fire (Mandel 2011 GMD 4:591) — reference implementation of
+#       empirical-ROS-at-front in coupled fire-atmosphere models.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+t_end = 15
+
+# Domain — same scout config as Cut4_U0p5__scout.txt
+outdoor.Lx              = 15.0
+outdoor.Ly              = 0.5
+outdoor.Lz              = 8.0
+outdoor.dx              = 0.05          # scout dx (2x rule for tractable wall)
+outdoor.dy              = 0.10
+outdoor.n_z_bed         = 8
+outdoor.bed_x_start     = 1.0
+outdoor.bed_x_end       = 12.0
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 1.0
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+# Fuel bed (Cheney 1993 Nat grass)
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.37
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04
+outdoor.wind_speed_m_s     = 0.5
+
+# Closures
+outdoor.turbulence_model   = k_epsilon
+outdoor.wall_function      = false
+outdoor.combustion_closure = edc
+outdoor.radiation_solver   = dom
+outdoor.dom_subcycle_every = 5
+outdoor.projection_method  = fft_pcg
+outdoor.cfl_factor         = 0.40
+
+# Bed (Phase 16)
+outdoor.lagrangian_bed_enable     = true
+outdoor.lagrangian_bed_N_per_cell = 20
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv     = 250.0
+outdoor.lagrangian_bed_view_factor_geometric = true
+
+# Phase 17c: level-set ACTIVE (we WANT v_n forcing now, blended with empirical)
+outdoor.level_set_passive    = false
+
+# Phase 19: empirical-ROS hybrid (the new feature)
+outdoor.empirical_ros_enable          = true
+outdoor.empirical_ros_model           = cheney_eq6
+outdoor.empirical_ros_a_ch            = 0.406       # Nat grass (Cut = 0.343)
+outdoor.empirical_ros_u_threshold_m_s = 1.4
+outdoor.empirical_ros_blend_width_m_s = 0.5
+
+# Ignition (same as Phase 17f baseline)
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = true
+outdoor.ignition_T_pin_K     = 1500.0
+outdoor.ignition_T_pin_height_m = 0.30
+outdoor.ignition_T_pin_ramp_s = 0.5
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 3.0
+
+outdoor.max_wall_time_s      = 15.0
+outdoor.min_dt_s             = 1.0e-4
+
+outdoor.edc_extinction_enable    = false
+outdoor.finney_tendril_enable    = false

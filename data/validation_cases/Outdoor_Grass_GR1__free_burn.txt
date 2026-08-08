@@ -1,0 +1,159 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     NFFL Fuel Model GR1 dry grass — free-burning single element
+# Geometry:     30 cm × 30 cm × 30 cm fuel bed (Anderson 1982 GR1 geometry)
+#               bulk density 0.24 kg/m³ (Anderson 1982 GR1)
+#               fuel depth 0.30 m
+# Flux:         FREE-BURNING — no external irradiance after ignition pulse
+#               Ignition: 40 kW/m² for 30 s, then q_in_external = 0
+#               Sole energy source after t=30 s: flame radiation feedback
+# Designation:  PROOF-OF-CONCEPT — not yet compared against EXP data.
+#               Tests self-sustainability of calibrated wheat straw kinetics
+#               under flame-feedback-only heating at outdoor scale.
+#               Phase 2 (dataset identification) required before quantitative
+#               validation (Rule #2: cal/val split to be declared before data loaded).
+#
+# Purpose:
+#   Validate that the flame radiation feedback loop closes for GR1 short grass
+#   without an external heater. This is the fundamental physics test for
+#   transition from cone calorimeter to outdoor free-burning fire:
+#     cone cal:    q_in = q_cone (external) + q_fb (flame, secondary)
+#     free-burning: q_in = q_fb ONLY (after ignition)
+#   If HRRPUA > 20 kW/m² is sustained for ≥60 s after pulse cutoff → PASS.
+#   Phase 1 acceptance criterion (Rule #3, declared before results examined).
+#
+# Parameter sources:
+#   Fuel bed geometry: Anderson (1982) USDA FS INT-122 — GR1 short grass
+#     fuel_depth_m = 0.30 m
+#     bulk_density_kg_m3 = 0.24 kg/m³ (Anderson: 0.24 kg/m³)
+#     sav_ratio_1_m = 7218 m⁻¹ (Anderson: 11841 ft⁻¹ ÷ 3.281 ≈ 3609 m⁻¹... see note)
+#   Kinetics: TRANSFERRED from Chen (2021) wheat straw 50 kW/m² CAL case (Rule #5)
+#     Chemical equivalence: GR1 = wheat straw surrogate (cellulose ~40%, same class)
+#   chi_rad = 0.25: Albini (1985) Combust. Sci. Tech. 42:229 — wildland fuels
+#     radiative fraction 0.20–0.30; 0.25 geometric midpoint; lower than wood (0.35).
+#     Rule #1: literature-derived, not EXP-fitted.
+#   view_factor = 0.40: standard cone geometry default; may need revision for
+#     horizontal fuel bed geometry in future (Rule #14, open item).
+#   ignition_q_kW_m2 = 40.0: representative of adjacent-burning-element flux
+#     (Byram intensity I_B ≈ 150 kW/m from neighbouring GR1 at q=50 kW/m²,
+#     tilt-enhanced view factor → ~40 kW/m² at adjacent surface; Albini 1981).
+#
+# References:
+#   Albini, F.A. (1985). A model for fire spread in wildland fuels by radiation.
+#       Combust. Sci. Tech. 42:229–258. [chi_rad ≈ 0.25 for wildland fuels]
+#   Albini, F.A. (1981). A model for the wind-blown flame from a line fire.
+#       Combust. Flame 43:155–174. [tilt-angle view factor]
+#   Anderson, H.E. (1982). Aids to determining fuel models for estimating fire
+#       behavior. USDA Forest Service INT-122. [GR1 bulk properties]
+#   Chen, X. et al. (2021). Fire behavior characteristics of crop straw in cone
+#       calorimeter tests. Materials, 14(12), 3407. [kinetics source, CAL case]
+#   Johansson, N. et al. (2018). Critical water application rates. Fire 2(1):3.
+#       [W_crit formula basis for suppression diagnostics]
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Simulation control ────────────────────────────────────────────────────────
+t_end = 600                # [s] 10-min burn; covers post-ignition self-sustaining phase
+
+# ── No q_in_constant: free_burning_mode builds the schedule automatically ─────
+# outdoor.free_burning_mode = true replaces q_in with:
+#   [0 – ignition_duration_s):   ignition_q_kW_m2 (ignition pulse)
+#   [ignition_duration_s – t_end]: 0.0 (flame feedback only)
+
+# ── Geometry: single-element thermal model ────────────────────────────────────
+# geometry.thickness_m = 0.035 m (35 mm, Chen cone geometry) is the thermal depth
+# of the single burning element.  This is NOT the outdoor fuel bed depth (0.30 m):
+#   outdoor.fuel_depth_m = 0.30 m  → Byram I_B = HRRPUA × depth (fireline intensity)
+#   geometry.thickness_m = 0.035 m → thermal slab; heat conduction length scale
+# Using the cone geometry keeps kinetics self-consistent (same cal case parameters).
+# Phase 2 refinement: determine correct thermal element size from burn rate analysis.
+geometry.thickness_m = 0.035     # [m] thermal element depth = cone sample depth
+geometry.node1_frac  = 0.12      # surface node fraction; dx1 = 4.2 mm → TTI ≈ 7–10 s
+
+# ── Material properties ───────────────────────────────────────────────────────
+material.density = 171.0          # [kg/m³] Chen (2021) packed bulk; consistent with kinetics
+                                   # NOTE: outdoor bulk density 0.24 kg/m³ (Anderson GR1) is
+                                   # used only for outdoor.bulk_density_kg_m3 (Byram diagnostics).
+                                   # The thermal model uses 171 kg/m³ for kinetics consistency.
+material.cp = 1300.0               # [J/(kg·K)]; Janssens (1993) dry cellulosic
+material.k  = 0.08                 # [W/(m·K)]; packed dry biomass; Koufopanos (1991)
+material.eps = 0.90                # [-]; dry biomass; Dietenberger (2002)
+
+# ── Pyrolysis kinetics — transferred from Chen 2021 wheat straw CAL ──────────
+material.k_evap0 = 0.0
+material.A1_py = 10.0              # [1/s] — Chen 2021 wheat straw CAL; do not re-tune
+material.E1_py = 5.6e4             # [J/mol]
+material.A2_py = 2.0               # [1/s]
+material.E2_py = 5.6e4             # [J/mol]
+material.seq_m1_frac  = 0.05
+material.seq_m2_frac0 = 0.95
+material.seq_mr_frac0 = 0.00       # no char residue — dry grass fully volatile
+material.seq_f12_to_m2 = 0.0
+material.seq_y1_vol = 1.0
+material.seq_y2_vol = 1.0
+fuel.kinetics_mode = two_step_sequential
+fuel.pyrolysis_mass_source = fuel_state
+
+# ── Flame radiation feedback (REQUIRED for free-burning) ─────────────────────
+# Without flame enable, q_in=0 after ignition pulse → no heat → extinction.
+fuel.flame_enable = true
+fuel.flame_chi_rad = 0.25          # wildland grass; Albini (1985) — lower than wood 0.35
+fuel.flame_view_factor = 0.40      # standard; may need revision for horiz. bed geometry
+fuel.flame_coupling_passes = 3     # iterative convergence (same as wood decks)
+
+# ── Initial conditions ────────────────────────────────────────────────────────
+T1 = 300.0
+T2 = 300.0
+M1 = 1.0                           # fuel_state: fully loaded
+
+# ── Outdoor environment (Anderson 1982 GR1 parameters) ───────────────────────
+outdoor.wind_speed_m_s = 0.0       # no-wind case first; wind cases in POC script
+outdoor.ambient_RH_frac = 0.20     # dry day; cured grass condition
+outdoor.ambient_T_K = 303.0        # 30 °C ambient
+outdoor.fuel_depth_m = 0.30        # [m]; Anderson (1982) GR1
+outdoor.bulk_density_kg_m3 = 0.24  # [kg/m³]; Anderson (1982) GR1
+outdoor.sav_ratio_1_m = 7218.0     # [1/m]; Anderson (1982) GR1 = 11841 ft⁻¹ × 0.3048/ft
+outdoor.initial_moisture_frac = 0.05  # cured dry grass; typical fire weather day
+outdoor.fuel_lag_time_s = 3600.0   # 1-hr fine fuel lag; Nelson (2000)
+outdoor.terrain = open
+
+# ── 3D mesh (Phase 14u: deck-driven mesh defaults) ────────────────────────────
+# These set defaults for run_3d_spread; kwargs override.
+# Lz=3.0m chosen for adequate canopy mixing-layer headroom (≥10·h_bed).
+# Lz=1.5 (legacy) artificially confined the standing wave for Cut U=8 cold-bed
+# (||w||_2 = 53 → 22 with Lz=3.0); Lz=5 gives marginal further reduction.
+# dz_expansion=1.2 keeps Nz manageable while maintaining bed-cell resolution.
+outdoor.Lx = 5.0                    # [m] streamwise extent
+outdoor.Ly = 0.5                    # [m] crosswind extent (with periodic-y BC)
+outdoor.Lz = 3.0                    # [m] vertical extent (~10·h_bed minimum)
+outdoor.dx = 0.1                    # [m] horizontal cell size
+outdoor.n_z_bed = 8                 # bed cells (z-direction; SOFT cap when BL on)
+outdoor.dz_first = 0.005            # [m] first wall cell (BL refinement; Phase 14v-bc)
+outdoor.bl_growth = 1.5             # geometric ratio in bed (Mell 2007 / WFDS practice)
+outdoor.dz_expansion = 1.2          # geometric stretch above bed (1.0 = uniform)
+outdoor.cfl_factor = 0.4            # CFL number for dt computation
+outdoor.canopy_C_d = 0.15           # solid-phase form-drag coefficient.
+                                    # Mueller (2021) Agric. For. Meteorol.
+                                    # 311:108691 calibrated specifically
+                                    # for pasture grass.  Default 0.30
+                                    # (Wilson & Shaw 1977) is for dense
+                                    # canopy.  Cold-flow BL diagnostic
+                                    # 2026-05-30 confirms 0.15 closes
+                                    # ~22% of the IBL u-deficit at
+                                    # z=0.5m for Cheney pasture.
+outdoor.wall_function = true        # Phase 14v-bc log-law WF (Way B ghost form; no cell pin)
+outdoor.proj_div_tol = 1.0e-3       # ‖∇·u‖_∞ threshold for projection breakout
+outdoor.proj_max_iter = 50          # safety cap; raise if cases hit it w/o converging
+# outdoor.bed_x_start = 0.5         # open ground upstream of bed (deferred):
+                                    # physically correct (Cheney 1993 had upstream
+                                    # open ground) and removes inlet projection BC
+                                    # inconsistency at burning i=0 cells, BUT current
+                                    # drip-torch is calibrated to bed-at-inlet so all
+                                    # cases regress (0/4 PASS).  Nat 4% U=0.5 IGNITES
+                                    # for first time (was no-ignition); over-predicts
+                                    # (6.30 vs 1.0 target).  Re-enable after retuning
+                                    # drip-torch energy for the open-ground geometry.
+
+# ── Free-burning mode ─────────────────────────────────────────────────────────
+outdoor.free_burning_mode = true
+outdoor.ignition_q_kW_m2 = 40.0   # ignition pulse irradiance [kW/m²]; adjacent flame
+                                    # Albini (1981) tilted-flame view factor estimate
+outdoor.ignition_duration_s = 30.0 # pulse duration [s]; minimum for ignition of dry straw

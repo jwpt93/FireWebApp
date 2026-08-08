@@ -1,0 +1,116 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Material:     Cheney 1993 Nat grass, M=4%, U=0.5 m/s
+# Geometry:     15m × 0.5m (periodic Y) × 8m, dx=0.025 (Phase 17f rule)
+# Designation:  PHASE 18A.2 SCOUT — LES test (Smagorinsky + SEM)
+#               Identical to the Phase 17f Nat4_U0p5 case (which failed:
+#               front locked at 2.54m, frac extinct ~13.8% by t=30s)
+#               EXCEPT swap k-ε → Smagorinsky + enable SEM inflow.
+#               Bed stays resolved (n_z_bed=8) to isolate the LES effect
+#               from the Phase 17e sub-grid-bed Y_F depletion issue.
+#
+# Question:  Does LES alone bootstrap propagation at U=0.5 m/s, or do we
+#            need the τ-filter on Y_F (Phase 18B) on top of LES?
+#
+# Calibration vs validation:
+#   This is a SCOUT (no acceptance band yet — qualitative go/no-go for
+#   Path B implementation).  Rule #2 split applies once Phase 18B locks
+#   acceptance bands.
+#
+# Parameter sources:
+#   Mesh dx vs U rule:       Phase 17f (commit 7b8276f, 2026-06-27).
+#   Bed (Nat grass):         Phase 14ax canonical (rho=1.07, h=0.37, σ=2000).
+#   M=4%, U=0.5:             Cheney 1993 Fig 8 Nat-4% wind bin.
+#   Smagorinsky LES:         Mell 2007 WFDS BF baseline.
+#   SEM inflow (I_t=0.20):   Jarrin 2008; Innocent 2023 WFDS pattern.
+#   Lagrangian bed kernel:   Phase 16 (commit daf9023).
+#
+# References:
+#   Cheney, N.P. et al. (1993) "Influence of fuel, weather and fire shape
+#       variables on fire-spread in grasslands," IJWF 3:31.
+#   Mell, W. et al. (2007) "A physics-based approach to modelling grassland
+#       fires," IJWF 16:1.
+#   Jarrin, N. et al. (2008) "A synthetic-eddy-method for generating inflow
+#       conditions for LES," Int. J. Heat Fluid Flow 27:585.
+#   Innocent, J. et al. (2023) "WFDS Modeling of Slope Effects on Grassland
+#       Fire Behaviour," Fire 6:406.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Simulation control ────────────────────────────────────────────────────────
+t_end = 15                     # [s] scout — past the k-ε burst+stagnation point (~12s)
+
+# ── Outdoor case spec (Phase 17e: case-spec lives in deck) ────────────────────
+
+# Domain (scout-compromise: dx=0.05 — 2x coarser than Phase 17f rule for U=0.5,
+#         but LES at dx=0.05 still resolves ~5cm eddies which is sufficient for
+#         qualitative go/no-go.  The Phase 17f rule was derived for k-ε to keep
+#         cell-residence/τ_EDC ratio bounded; LES has different mixing physics.)
+outdoor.Lx              = 12.0           # shorter than 15 — at U=0.5 the front won't reach far
+outdoor.Ly              = 0.5
+outdoor.Lz              = 8.0
+outdoor.dx              = 0.05
+outdoor.dy              = 0.10           # anisotropy 2:1 — same k-ε baseline mesh except for dx
+outdoor.n_z_bed         = 8              # bed-RESOLVED (Phase 17e showed sub-grid bed has Y_F depletion problem)
+outdoor.bed_x_start     = 1.0            # Phase 17f rule: max(1.0, Lx*0.05)
+outdoor.bed_x_end       = 9.0            # Lx - 3.0
+
+# Mesh stretching above bed
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 1.0
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+# Fuel bed (Cheney 1993 Nat grass)
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.37
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04    # M=4%
+
+# Wind
+outdoor.wind_speed_m_s     = 0.5
+
+# Turbulence: LES (Path B scout)
+outdoor.turbulence_model   = smagorinsky
+
+# Inflow turbulence: SEM (Innocent 2023 WFDS pattern)
+outdoor.sem_enable         = true
+outdoor.sem_I_t            = 0.20
+outdoor.sem_N              = 200
+outdoor.sem_seed           = 42
+
+# Combustion + radiation (production)
+outdoor.combustion_closure    = edc
+outdoor.radiation_solver      = dom
+outdoor.dom_subcycle_every    = 5
+outdoor.projection_method     = fft_pcg
+outdoor.cfl_factor            = 0.40
+
+# Bed: Lagrangian particles (production)
+outdoor.lagrangian_bed_enable     = true
+outdoor.lagrangian_bed_N_per_cell = 20
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv     = 250.0
+outdoor.lagrangian_bed_view_factor_geometric = true
+
+# Phase 17c: passive level-set (no kinematic v_n forcing — bed self-ignites via CFD)
+outdoor.level_set_passive    = true
+
+# Ignition: solid-phase seed + brief gas pin (Phase 17d).
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = true
+outdoor.ignition_T_pin_K     = 1500.0
+outdoor.ignition_T_pin_height_m = 0.30
+outdoor.ignition_T_pin_ramp_s = 0.5
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 3.0          # matches Phase 17f worker
+
+# Run-time controls
+outdoor.max_wall_time_s      = 15.0     # scout — past k-ε burst+stagnation (~t=12)
+outdoor.min_dt_s             = 1.0e-4
+
+# Disabled features
+outdoor.edc_extinction_enable    = false
+outdoor.finney_tendril_enable    = false

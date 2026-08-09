@@ -1,0 +1,214 @@
+{
+ "runs": [
+  {
+   "case_id": "cheney_nat4__U0p5",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 0.5,
+   "ros_m_s": 0.00913598634109278,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    32.83717693957456
+   ]
+  },
+  {
+   "case_id": "cheney_nat4__U1",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 1.0,
+   "ros_m_s": 0.009672779884208189,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    31.014868899247976
+   ]
+  },
+  {
+   "case_id": "cheney_nat4__U2",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 2.0,
+   "ros_m_s": 0.010660580150723499,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    28.141057593346826
+   ]
+  },
+  {
+   "case_id": "cheney_nat4__U3",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 3.0,
+   "ros_m_s": 0.011075536591321194,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    27.086723747098667
+   ]
+  },
+  {
+   "case_id": "cheney_nat4__U4",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 4.0,
+   "ros_m_s": 0.011414196570394042,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    26.283058833780306
+   ]
+  },
+  {
+   "case_id": "cheney_nat4__U6",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 6.0,
+   "ros_m_s": 0.012184211911795749,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    24.622027437783213
+   ]
+  },
+  {
+   "case_id": "cheney_nat4__U8",
+   "label": "Cheney natural pasture, M = 4%",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 8.0,
+   "ros_m_s": 0.012912927046206802,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    23.232532711328652
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U0p5",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 0.5,
+   "ros_m_s": 0.0066015369597435605,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    45.443962796756594
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U1",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 1.0,
+   "ros_m_s": 0.007783227361402181,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    38.54442200773045
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U2",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 2.0,
+   "ros_m_s": 0.009018274101857614,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    33.265788621151465
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U3",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 3.0,
+   "ros_m_s": 0.009694013262490008,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    30.94693517295043
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U4",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 4.0,
+   "ros_m_s": 0.010198597251457431,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    29.415810096543275
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U6",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 6.0,
+   "ros_m_s": 0.011036492667569073,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    27.182548753151917
+   ]
+  },
+  {
+   "case_id": "cheney_cut4__U8",
+   "label": "Cheney cut pasture, M = 4%",
+   "fuel": "cut",
+   "a_ch": 0.343,
+   "moisture_frac": 0.04,
+   "wind_speed_m_s": 8.0,
+   "ros_m_s": 0.011915503985441361,
+   "n_cells_ignited": 2,
+   "t_ignition_s": [
+    0.0,
+    25.177281663163132
+   ]
+  },
+  {
+   "case_id": "gr1_free_burn__U0",
+   "label": "Anderson GR1 short grass, M = 5%, free-burning",
+   "fuel": "natural",
+   "a_ch": 0.406,
+   "moisture_frac": 0.05,
+   "wind_speed_m_s": 0.0,
+   "ros_m_s": 0.0,
+   "n_cells_ignited": 1,
+   "t_ignition_s": [
+    0.0,
+    null
+   ]
+  }
+ ]
+}

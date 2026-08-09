@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grass Fire Rate-of-Spread — Cheney 1993</title>
+<meta name="description" content="Interactive grass-fire rate-of-spread models: empirical Cheney Eq. 6 live in your browser, plus precomputed 1D line-spread and 3D reactive-flow results.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <h1>Grass Fire Rate-of-Spread</h1>
+  <p class="byline">
+    Three tiers of fire-spread physics, from a one-line empirical fit to a full 3D reactive-flow solver.
+    Code: <a href="https://github.com/jwpt93/FireWebApp">github.com/jwpt93/FireWebApp</a>
+  </p>
+</header>
+
+<main>
+
+<!-- ── Preset cases (Schroeder-style button row) ─────────────────────────── -->
+<section id="presets">
+  <span class="row-label">Preset cases:</span>
+  <span id="preset-buttons"></span>
+</section>
+
+<!-- ── Tier 1: interactive empirical model ───────────────────────────────── -->
+<section id="tier1">
+  <h2>Tier 1 — Empirical model (live in your browser)</h2>
+
+  <div class="panel-grid">
+    <canvas id="tier1-plot" class="plot" height="360"></canvas>
+
+    <div class="controls">
+      <div class="control">
+        <label for="wind">Wind speed <span id="wind-symbol">U<sub>10</sub></span>:
+          <strong id="wind-value"></strong> m/s</label>
+        <input type="range" id="wind" min="0" max="8" step="0.1" value="4">
+      </div>
+
+      <div class="control">
+        <label for="moisture">Fuel moisture <em>M</em>: <strong id="moisture-value"></strong> %</label>
+        <input type="range" id="moisture" min="0" max="30" step="0.5" value="4">
+      </div>
+
+      <div class="control" id="age-control" hidden>
+        <label for="age">Stand age: <strong id="age-value"></strong> yr</label>
+        <input type="range" id="age" min="1" max="50" step="1" value="10">
+      </div>
+
+      <fieldset class="control" id="fuel-picker">
+        <legend>Fuel (Cheney 1993)</legend>
+        <label><input type="radio" name="fuel" value="natural" checked>
+          Natural pasture (<em>a</em><sub>ch</sub> = 0.406)</label>
+        <label><input type="radio" name="fuel" value="cut">
+          Cut grass (<em>a</em><sub>ch</sub> = 0.343)</label>
+      </fieldset>
+
+      <fieldset class="control" id="model-picker">
+        <legend>Model</legend>
+        <label><input type="radio" name="model" value="cheney_eq6" checked>
+          Cheney Eq. 6 (grass)</label>
+        <label><input type="radio" name="model" value="marsden_smedley">
+          Marsden-Smedley (buttongrass)</label>
+      </fieldset>
+
+      <div id="tier1-readout" class="readout"></div>
+    </div>
+  </div>
+
+  <p class="caption" id="tier1-caption"></p>
+</section>
+
+<!-- ── Tier 2: precomputed 1D line spread ────────────────────────────────── -->
+<section id="tier2">
+  <h2>Tier 2 — 1D flame-line spread (precomputed)</h2>
+
+  <div class="controls controls-inline">
+    <span class="row-label">Fuel:</span>
+    <span id="tier2-fuel-buttons"></span>
+    <span class="row-label">U<sub>10</sub>:</span>
+    <span id="tier2-wind-buttons"></span>
+  </div>
+
+  <div class="panel-grid">
+    <canvas id="tier2-traces" class="plot" height="300"></canvas>
+    <canvas id="tier2-ros" class="plot" height="300"></canvas>
+  </div>
+
+  <div id="tier2-readout" class="readout"></div>
+  <p class="caption" id="tier2-caption"></p>
+</section>
+
+<!-- ── Tier 3: 3D reactive flow gallery ──────────────────────────────────── -->
+<section id="tier3">
+  <h2>Tier 3 — 3D reactive flow (gallery)</h2>
+  <div id="tier3-gallery"></div>
+  <p class="caption">
+    Full 3D k-&epsilon; RANS + EDC combustion + DOM radiation + Lagrangian bed particles,
+    10 minutes to 1 hour per case. Runs are added as they complete.
+  </p>
+</section>
+
+<!-- ── Explanation ────────────────────────────────────────────────────────── -->
+<section id="about">
+  <h2>What you are looking at</h2>
+
+  <p>The same input conditions — wind speed, fuel moisture, fuel bed — pushed through
+  three progressively richer representations of grass-fire spread physics:</p>
+
+  <p><strong>Tier 1</strong> is the closed-form regression of
+  <a href="https://doi.org/10.1071/WF9980001">Cheney, Gould &amp; Catchpole (1998), Eq. 6</a>,
+  fit to the Australian grass-fire experiments of
+  <a href="https://doi.org/10.1071/WF9930031">Cheney, Gould &amp; Catchpole (1993)</a>:
+  ROS&nbsp;=&nbsp;<em>a</em><sub>ch</sub>·U₂<sup>0.987</sup>·exp(−0.0707·M%).
+  It runs in microseconds — the curve and readout above are computed by JavaScript
+  in this page (View Source to see), and the scatter points are the digitized
+  Fig.&nbsp;8 experimental data the regression fits. The Marsden-Smedley model
+  (<a href="https://doi.org/10.1071/WF9950215">1995</a>) is the equivalent
+  regression for Tasmanian buttongrass moorland, with wind measured at 1.7&nbsp;m
+  and a fuel build-up factor for stand age.</p>
+
+  <p><strong>Tier 2</strong> replaces the regression with a resolved pyrolysis
+  model: a cascade of 1D fuel elements, each running a two-step pyrolysis ROM
+  (kinetics transferred from cone-calorimeter wheat-straw data), heated by
+  radiation from upstream burning cells (Albini line-source view factor with
+  Beer–Lambert blocking) plus wind-driven convective preheating. Each run takes
+  a fraction of a second on the server; results above are precomputed snapshots.
+  The source cell is driven by a sustained 50&nbsp;kW/m² flux; downstream cells
+  must ignite from spread flux alone.</p>
+
+  <p><strong>Tier 3</strong> is the full thing: 3D k-&epsilon; RANS with EDC
+  combustion, discrete-ordinates radiation, Lagrangian fuel particles and a
+  level-set front — hours of compute per case, rendered as animations.</p>
+
+  <h3>Limitations (read these)</h3>
+  <ul>
+    <li><strong>Tier 1</strong> is a regression over a specific dataset
+      (Annaburroo, NT, Australia): flat ground, cured grass, U<sub>10</sub> ≲ 8 m/s.
+      It interpolates well and extrapolates badly.</li>
+    <li><strong>Tier 2</strong> underpredicts field spread rates by one to two
+      orders of magnitude: a single line of 1D elements captures radiative
+      ignition physics but not the convective flame-attachment mechanism that
+      drives real grass-fire propagation. Treat its numbers as
+      mechanism-demonstration, not prediction — that is exactly why Tier 3
+      (and the empirical forcing used in its low-wind regime) exists.</li>
+    <li>At U<sub>10</sub> &lt; ~1.4 m/s fires spread by intermittent flame
+      tongues (Finney et al. 2015), a variance mechanism no mean-field closure
+      represents; production simulators switch to empirical forcing there too.</li>
+    <li>No slope, no spotting, no fire-shape effects, homogeneous fuel only.</li>
+  </ul>
+
+  <h3>References</h3>
+  <ul class="refs">
+    <li>Cheney NP, Gould JS, Catchpole WR (1993). The influence of fuel, weather and
+      fire shape variables on fire-spread in grasslands. <em>Int. J. Wildland Fire</em> 3(1): 31–44.</li>
+    <li>Cheney NP, Gould JS, Catchpole WR (1998). Prediction of fire spread in grasslands.
+      <em>Int. J. Wildland Fire</em> 8(1): 1–13.</li>
+    <li>Marsden-Smedley JB, Catchpole WR (1995). Fire behaviour modelling in Tasmanian
+      buttongrass moorlands. <em>Int. J. Wildland Fire</em> 5(4): 215–228.</li>
+    <li>Albini FA (1985). A model for fire spread in wildland fuels by radiation.
+      <em>Combust. Sci. Tech.</em> 42: 229–258.</li>
+    <li>Finney MA et al. (2015). Role of buoyant flame dynamics in wildfire spread.
+      <em>PNAS</em> 112: 9833–9838.</li>
+  </ul>
+
+  <p class="view-source">This site is plain HTML/JavaScript with no build step —
+  use your browser's View Source to read the simulation code. Model parameters and
+  per-case decks are in the <a href="https://github.com/jwpt93/FireWebApp">repository</a>.</p>
+</section>
+
+</main>
+
+<footer>
+  <p>Reduced-order fire-spread models from the
+  <code>unitiedmodel2</code> research project. Experimental data digitized from
+  Cheney et al. (1993), Fig. 8.</p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

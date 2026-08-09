@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEB EXPORT DECK — Tier-2 (1D line spread) precompute for the website applet
+#
+# Case:        Cheney 1993 cut (mown) pasture, M = 4% dead-fuel moisture
+# Kinetics:    Chen (2021) wheat straw — identical to Outdoor_Grass_GR1__free_burn.txt
+#              (Rule #5 transfer; GR1 = wheat-straw surrogate, cellulose ~40%)
+# Fuel bed:    Cheney 1993 cut pasture (from Outdoor_Cheney_Cut4_* Tier-3 decks)
+#              bulk_density 1.07 kg/m³, fuel_depth 0.10 m, SAV 2000 m⁻¹
+# Flux:        q_in_constant = 50 kW/m² SUSTAINED on cell 0 (ignition source).
+#              Per run_1d_spread docstring: a sustained source is required —
+#              the 40 kW/m² / 30 s free-burn pulse never reaches the HRRPUA
+#              needed to drive the spread cascade (Phase 1 POC, 2026-03-27).
+#
+# This deck exists only for scripts/web_export/export_tier2.py.  It is not
+# part of the validation set: q_in_constant makes cell 0 a boundary-driven
+# source, so per-cell results are model physics demonstration, not validation.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+t_end = 300
+
+# ── Sustained source flux for cell 0 (cascade cells get spread flux) ─────────
+q_in_constant = 50000              # [W/m²] = 50 kW/m² sustained
+
+# ── Geometry: single-element thermal model ────────────────────────────────────
+geometry.thickness_m = 0.035     # [m] thermal element depth = cone sample depth
+geometry.node1_frac  = 0.12      # surface node fraction
+
+# ── Material properties ───────────────────────────────────────────────────────
+material.density = 171.0          # [kg/m³] Chen (2021) packed bulk
+material.cp = 1300.0               # [J/(kg·K)]; Janssens (1993) dry cellulosic
+material.k  = 0.08                 # [W/(m·K)]; packed dry biomass
+material.eps = 0.90                # [-]; dry biomass
+
+# ── Pyrolysis kinetics — Chen 2021 wheat straw (do not re-tune) ──────────────
+material.k_evap0 = 0.0
+material.A1_py = 10.0              # [1/s]
+material.E1_py = 5.6e4             # [J/mol]
+material.A2_py = 2.0               # [1/s]
+material.E2_py = 5.6e4             # [J/mol]
+material.seq_m1_frac  = 0.05
+material.seq_m2_frac0 = 0.95
+material.seq_mr_frac0 = 0.00       # no char residue — dry grass fully volatile
+material.seq_f12_to_m2 = 0.0
+material.seq_y1_vol = 1.0
+material.seq_y2_vol = 1.0
+fuel.kinetics_mode = two_step_sequential
+fuel.pyrolysis_mass_source = fuel_state
+
+# ── Flame radiation feedback ──────────────────────────────────────────────────
+fuel.flame_enable = true
+fuel.flame_chi_rad = 0.25          # wildland grass; Albini (1985)
+fuel.flame_view_factor = 0.40
+fuel.flame_coupling_passes = 3
+
+# ── Initial conditions ────────────────────────────────────────────────────────
+T1 = 300.0
+T2 = 300.0
+M1 = 1.0                           # fuel_state: fully loaded
+
+# ── Outdoor environment (Cheney 1993 natural pasture, M = 4%) ────────────────
+outdoor.wind_speed_m_s = 0.5       # overridden by export script kwarg
+outdoor.ambient_RH_frac = 0.20     # dry day; cured grass condition
+outdoor.ambient_T_K = 303.0        # 30 °C ambient
+outdoor.fuel_depth_m = 0.10        # [m]; Cheney 1993 cut pasture
+outdoor.bulk_density_kg_m3 = 1.07  # [kg/m³]; Cheney 1993 cut pasture
+outdoor.sav_ratio_1_m = 2000.0     # [1/m]; Cheney Tier-3 decks
+outdoor.initial_moisture_frac = 0.04
+outdoor.fuel_lag_time_s = 3600.0   # 1-hr fine fuel lag; Nelson (2000)
+outdoor.terrain = open

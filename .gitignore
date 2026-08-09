@@ -15,6 +15,11 @@ plots/
 *.mp4
 *.png
 
+# …but the published site keeps its (small) gallery assets
+!docs/assets/**/*.gif
+!docs/assets/**/*.mp4
+!docs/assets/**/*.png
+
 # Editor / OS
 .vscode/
 .idea/

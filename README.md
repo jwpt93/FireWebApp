@@ -161,6 +161,47 @@ Fig 8 envelope.
 
 ---
 
+## Website (docs/)
+
+The repo ships a static site (plain HTML/JS, no build step, no backend)
+in [`docs/`](docs/), designed for GitHub Pages
+(**Settings → Pages → Deploy from a branch → `main` / `/docs`**):
+
+- **Tier 1 runs live in the browser** —
+  [`docs/js/empirical.js`](docs/js/empirical.js) is a hand port of
+  `empirical_ros.py` (Cheney Eq. 6 + Marsden-Smedley), with sliders and the
+  digitized Fig 8 data overlaid.
+- **Tier 2 results are precomputed** into `docs/data/tier2/*.json`.
+- **Tier 3** animations are collected into `docs/assets/tier3/`.
+
+Local preview (fetch() requires http, opening index.html directly won't work):
+
+```bash
+python3 -m http.server -d docs 8000   # → http://localhost:8000
+```
+
+Regenerating site data after model changes:
+
+```bash
+# Tier-2 precompute (seconds; writes docs/data/tier2/)
+OMP_NUM_THREADS=8 .venv/bin/python scripts/web_export/export_tier2.py
+
+# Tier-3 gallery (after running a Tier-3 case + animation script)
+.venv/bin/python scripts/web_export/export_tier3_gallery.py
+
+# Verification: JS port matches Python, and the site's boot path runs clean
+.venv/bin/python scripts/web_export/export_tier1_reference.py
+node scripts/web_export/check_js_port.mjs
+node scripts/web_export/smoke_site.mjs
+```
+
+The Tier-2 export decks live in `scripts/web_export/decks/` — they reuse the
+GR1 kinetics with Cheney bed parameters and a sustained 50 kW/m² source flux
+(required for the cascade; see `run_1d_spread` docstring). They are export
+artifacts, not validation cases.
+
+---
+
 ## Tests
 
 The full outdoor test suite is vendored in `tests/outdoor/`. Run:

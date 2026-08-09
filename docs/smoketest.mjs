@@ -69,6 +69,12 @@ function makeCtx() {
     fillText: () => { fillTextCalls++; },
     strokeText: () => {},
     setTransform: () => {},
+    // Gradients must be real objects: the default Proxy fallback returns
+    // undefined, and `ctx.createLinearGradient(...).addColorStop(...)` then
+    // throws. Anything the page assigns to fillStyle has to survive.
+    createLinearGradient: () => ({ addColorStop() {} }),
+    createRadialGradient: () => ({ addColorStop() {} }),
+    createPattern: () => ({}),
   };
   return new Proxy(real, {
     get: (o, k) => (k in o ? o[k] : () => {}),
@@ -166,7 +172,8 @@ if (fillTextCalls < 5) fails.push(`Fig 8 panel drew only ${fillTextCalls} labels
 
 for (const [id, want] of [
   ['out-ros', /\d/], ['out-ros-ms', /\d/], ['out-intensity', /\d/],
-  ['out-flame', /\d/], ['out-load', /\d/], ['out-residence', /\d/],
+  ['out-flame', /\d/], ['out-flameh', /\d/], ['out-tilt', /\d/],
+  ['out-flamed', /\d/], ['out-load', /\d/], ['out-residence', /\d/],
   ['out-area', /\d/], ['out-perimeter', /\d/], ['out-time', /\d:\d\d/],
   ['windval', /m\/s/], ['moistureval', /%/], ['winddirval', /°/],
   ['speedval', /×/], ['speedval2', /×/], ['domain', /m/],
@@ -188,4 +195,6 @@ if (fails.length) {
 console.log('OK — applet boot path ran clean against real exported data');
 console.log(`  ${frames} frames, ${putImageDataCalls} map paints, ${fillTextCalls} panel labels`);
 console.log(`  ROS ${get('out-ros')} m/min · ${get('out-intensity')} kW/m · ` +
-            `flame ${get('out-flame')} m · burnt ${get('out-area')} ha at t=${get('out-time')}`);
+            `flame ${get('out-flame')} m long, ${get('out-flameh')} m high, ` +
+            `${get('out-tilt')}° tilt, ${get('out-flamed')} m deep`);
+console.log(`  burnt ${get('out-area')} ha at t=${get('out-time')}`);

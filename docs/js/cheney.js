@@ -148,6 +148,51 @@ export function flameLength(I_kW_m) {
   return 0.0775 * Math.pow(I_kW_m, 0.46);
 }
 
+/** Gravitational acceleration [m/s^2]. boundary.py: _G */
+const G = 9.81;
+
+/**
+ * Wind-adjustment factor, 10 m -> midflame. boundary.py: _WAF
+ * 0.90 open, 0.60 shrub.
+ */
+export const WAF = Object.freeze({ open: 0.90, shrub: 0.60 });
+
+/**
+ * Byram (1959) flame tilt angle from vertical [rad].
+ *
+ *     Fr    = U_mf^2 / (g · L_f)        convective Froude number
+ *     tan θ = 0.88 · sqrt(Fr)
+ *
+ * Port of `flame_tilt_angle()` in src/model_outdoor/boundary.py, which takes
+ * the 10 m wind and converts to midflame internally. This is what makes the
+ * side view show a flame that lies over as the wind rises: a stronger wind
+ * at fixed flame length raises Fr, and the flame's vertical reach falls as
+ * cos θ even though its LENGTH is unchanged.
+ *
+ * @param {number} U10_m_s  wind at 10 m [m/s]
+ * @param {number} L_f_m    flame length [m]
+ * @param {string} [terrain] 'open' or 'shrub'
+ * @returns {number} tilt from vertical [rad]; 0 with no wind or no flame
+ */
+export function flameTilt(U10_m_s, L_f_m, terrain = 'open') {
+  if (!(U10_m_s > 0) || !(L_f_m > 0)) return 0;
+  const U_mf = U10_m_s * (WAF[terrain] ?? WAF.open);
+  const Fr = (U_mf * U_mf) / (G * L_f_m);
+  return Math.atan(0.88 * Math.sqrt(Fr));
+}
+
+/**
+ * Vertical reach of a tilted flame [m].
+ *
+ *     H = L_f · cos θ
+ *
+ * The number people mean by "flame height", as distinct from Byram's flame
+ * LENGTH measured along the tilted flame axis.
+ */
+export function flameHeight(L_f_m, tiltRad) {
+  return L_f_m * Math.cos(tiltRad);
+}
+
 // ---------------------------------------------------------------------------
 // Front normal speed models
 //

@@ -15,7 +15,7 @@
  */
 import { LevelSet2D } from './levelset.js';
 import { rosFromU2, firelineIntensity, flameLength, windProjectedSpeed,
-         isotropicSpeed } from './cheney.js';
+         isotropicSpeed, flameTilt, flameHeight, U2_PER_U10 } from './cheney.js';
 import { FUELS, fuelLoad, residenceTime_s } from './fuels.js';
 
 /** Domain, in metres. Wide enough that a fast case still takes a while. */
@@ -171,6 +171,101 @@ export class FireSim {
       advanced += dt;
     }
     return advanced;
+  }
+
+  /** Byram flame tilt from vertical [rad] at the head. */
+  get flameTilt_rad() {
+    // flameTilt takes the 10 m wind; the slider is U_2, so undo the 0.723.
+    const U10 = this.params.U2_m_s / U2_PER_U10;
+    return flameTilt(U10, this.flameLength_m);
+  }
+
+  /** Vertical reach of the tilted flame [m] — "flame height". */
+  get flameHeight_m() {
+    return flameHeight(this.flameLength_m, this.flameTilt_rad);
+  }
+
+  /**
+   * Flame depth [m] — the along-wind width of the flaming zone.
+   *
+   *     D = ROS · t_r
+   *
+   * The band of fuel that is alight at any instant: everything the front
+   * passed within one residence time. Falls straight out of the arrival-time
+   * field, and is what the side view draws the flame sheet on top of.
+   */
+  get flameDepth_m() {
+    return this.headRos_m_s * this.residence_s;
+  }
+
+  /** Ignition origin in metres — where the seed was placed. */
+  get origin() {
+    return { x: DOMAIN.Lx * 0.28, y: DOMAIN.Ly * 0.5 };
+  }
+
+  /** Nearest-cell index for a point in metres, or -1 if outside. */
+  _cellAt(x_m, y_m) {
+    const i = Math.floor(x_m / DOMAIN.dx);
+    const j = Math.floor(y_m / DOMAIN.dx);
+    if (i < 0 || j < 0 || i >= this.nx || j >= this.ny) return -1;
+    return j * this.nx + i;
+  }
+
+  /**
+   * Sample the burn state along the wind axis through the ignition origin.
+   *
+   * Returns one entry per sample position `s` (metres along the wind
+   * direction, signed, zero at the origin), each tagged with what the side
+   * view needs to paint that column.
+   *
+   * @param {number} s0     start of the window [m along wind]
+   * @param {number} s1     end of the window [m along wind]
+   * @param {number} n      number of samples
+   */
+  sliceAlongWind(s0, s1, n) {
+    const dir = (this.params.windDirDeg * Math.PI) / 180;
+    const wx = Math.cos(dir);
+    const wy = Math.sin(dir);
+    const { x: ox, y: oy } = this.origin;
+    const tau = this.residence_s;
+    const out = new Array(n);
+
+    for (let k = 0; k < n; k++) {
+      const s = s0 + ((s1 - s0) * k) / (n - 1);
+      const cell = this._cellAt(ox + s * wx, oy + s * wy);
+      if (cell < 0) {
+        out[k] = { s, state: 'outside', age: -1 };
+        continue;
+      }
+      const a = this.arrival[cell];
+      if (a < 0) {
+        out[k] = { s, state: 'unburnt', age: -1 };
+      } else {
+        const age = this.t - a;
+        out[k] = { s, state: age <= tau ? 'burning' : 'burnt', age };
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Distance from the ignition origin to the head of the fire, along the
+   * wind axis [m]. NaN before anything has burnt.
+   */
+  headPosition_m() {
+    const dir = (this.params.windDirDeg * Math.PI) / 180;
+    const wx = Math.cos(dir);
+    const wy = Math.sin(dir);
+    const { x: ox, y: oy } = this.origin;
+    const step = DOMAIN.dx * 0.5;
+    const maxS = Math.max(DOMAIN.Lx, DOMAIN.Ly);
+    let last = NaN;
+    for (let s = 0; s <= maxS; s += step) {
+      const cell = this._cellAt(ox + s * wx, oy + s * wy);
+      if (cell < 0) break;
+      if (this.ls.phi[cell] < 0) last = s;
+    }
+    return last;
   }
 
   /** True once the front has reached any domain edge. */

@@ -7,6 +7,7 @@
 import { FireSim, DOMAIN } from './sim.js';
 import { FireMap } from './firemap.js';
 import { Fig8Panel } from './fig8panel.js';
+import { SideView } from './sideview.js';
 import { FUELS, fuelLoad } from './fuels.js';
 import { isExtrapolating, VALID_RANGE } from './cheney.js';
 
@@ -14,6 +15,7 @@ const $ = (id) => document.getElementById(id);
 
 const sim = new FireSim();
 const map = new FireMap($('map'));
+const side = new SideView($('side'));
 let panel = null;
 
 /** Simulated seconds per real second. A real grass fire is slow to watch. */
@@ -53,6 +55,9 @@ function syncReadouts() {
   $('out-ros-ms').textContent = ros.toFixed(3);
   $('out-intensity').textContent = Math.round(sim.intensity_kW_m).toLocaleString();
   $('out-flame').textContent = sim.flameLength_m.toFixed(2);
+  $('out-flameh').textContent = sim.flameHeight_m.toFixed(2);
+  $('out-tilt').textContent = ((sim.flameTilt_rad * 180) / Math.PI).toFixed(0);
+  $('out-flamed').textContent = sim.flameDepth_m.toFixed(1);
   $('out-load').textContent = fuelLoad(f).toFixed(2);
   $('out-residence').textContent = sim.residence_s.toFixed(0);
   $('out-area').textContent = sim.burntArea_ha.toFixed(2);
@@ -99,6 +104,7 @@ function frame(ts) {
   }
 
   map.draw(sim);
+  side.draw(sim);
   panel?.draw({
     fuelKey: sim.params.fuelKey,
     a_ch: sim.fuel.a_ch,

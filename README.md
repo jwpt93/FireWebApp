@@ -187,8 +187,22 @@ The applet runs the **2D level-set fire spread live in the browser**: a front
 propagating across a fuel bed, driven by the Cheney regression, with sliders
 for wind, moisture, wind direction, fuel type, ignition pattern and shape
 model. Readouts give rate of spread, Byram fireline intensity, flame length,
-fuel load, residence time, burnt area and perimeter, and a Fig 8 panel shows
-where the current settings sit inside the real experimental scatter.
+height, tilt and depth, fuel load, residence time, burnt area and perimeter,
+and a Fig 8 panel shows where the current settings sit inside the real
+experimental scatter.
+
+A **side elevation** below the plan view shows a vertical slice along the
+wind: the fuel bed, the flaming zone, and the flame standing on it. It is
+drawn at **true 1:1 scale** — a 60 m × 10 m window tracking the head — so
+flame height reads honestly against the ground rather than being vertically
+exaggerated. Everything in it is derived: flame length from Byram's
+`L_f = 0.0775·I_B^0.46`, tilt from Byram's convective Froude relation
+`tan θ = 0.88·√(U_mf²/gL_f)`, height as `L_f·cos θ`, and the depth of the
+flaming zone as `ROS × residence time`, read out of the arrival-time field.
+
+That combination is the thing a plan view cannot show. Going from U₂ = 4 to
+7 m/s, flame *length* grows 4.75 → 6.54 m, but flame *height* only goes
+4.00 → 4.72 m, because the tilt opens from 33° to 44°.
 
 ```
 docs/
@@ -199,6 +213,7 @@ docs/
 ├── js/sim.js           ← front + arrival times + derived metrics
 ├── js/firemap.js       ← fuel / burning / burnt canvas renderer
 ├── js/fig8panel.js     ← Fig 8 overlay with a live marker
+├── js/sideview.js      ← side elevation: flame height, tilt and depth
 ├── js/app.js           ← control wiring and animation loop
 ├── data/golden.json    ← generated; pins the JS to the Python reference
 ├── data/fig8.json      ← generated; Fig 8 scatter

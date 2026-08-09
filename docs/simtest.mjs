@@ -260,8 +260,11 @@ function extentAlong(sim, ox, oy, dx_, dy_) {
     const w0 = fuelLoad(FUELS[key]);
     check(`${key} fuel load plausible`, w0 > 0.15 && w0 < 1.0,
           `${w0.toFixed(3)} kg/m² (grass beds run ~0.2–0.6)`);
+    // Cheney's measured SAV (9770 1/m) gives ~8 s. Grass flame residence is
+    // seconds, not tens of seconds -- an inflated value here shows up as an
+    // implausibly deep flaming zone in the side view.
     const tau = residenceTime_s(FUELS[key]);
-    check(`${key} residence time plausible`, tau > 5 && tau < 60,
+    check(`${key} residence time plausible`, tau > 4 && tau < 20,
           `${tau.toFixed(1)} s`);
   }
 

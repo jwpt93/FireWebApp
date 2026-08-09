@@ -114,6 +114,11 @@
   table.out tr.sep td, table.out tr.sep th { border-top: 1px solid var(--border); padding-top: .5rem; }
 
   #fig8 { width: 100%; aspect-ratio: 4 / 3; display: block; }
+  #side {
+    width: 100%; aspect-ratio: 6 / 1; display: block;
+    border-radius: .4rem; background: var(--surface-0);
+  }
+  .caption { font-size: .78rem; color: var(--text-2); margin: .5rem 0 0; }
   .legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .74rem; color: var(--text-2); margin-top: .5rem; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .3rem; vertical-align: -1px; }
   .legend .ref  { background: var(--accent); border-radius: 0; height: 2px; width: 16px; vertical-align: 3px; }
@@ -159,6 +164,14 @@
         <span class="scale">elapsed <strong id="out-time">0:00</strong> ·
           <span id="speedval">20×</span> real time</span>
       </div>
+      <h2 style="margin-top:1.1rem">Side view at the front</h2>
+      <canvas id="side"></canvas>
+      <p class="caption">
+        A vertical slice along the wind, 60 m of ground drawn to scale — one
+        metre across is one metre up, so flame height reads honestly against
+        the fuel bed. The window tracks the head as it runs.
+      </p>
+
       <div class="note" id="edgenote" hidden>
         The fire has reached the edge of the domain. Reset to run again.
       </div>
@@ -236,6 +249,9 @@
         <tr><th></th><td><span id="out-ros-ms">—</span><span class="u">m/s</span></td></tr>
         <tr><th>Fireline intensity</th><td><span id="out-intensity">—</span><span class="u">kW/m</span></td></tr>
         <tr><th>Flame length</th><td><span id="out-flame">—</span><span class="u">m</span></td></tr>
+        <tr><th>Flame height</th><td><span id="out-flameh">—</span><span class="u">m</span></td></tr>
+        <tr><th>Flame tilt</th><td><span id="out-tilt">—</span><span class="u">° from vert.</span></td></tr>
+        <tr><th>Flame depth</th><td><span id="out-flamed">—</span><span class="u">m</span></td></tr>
         <tr class="sep"><th>Fuel load</th><td><span id="out-load">—</span><span class="u">kg/m²</span></td></tr>
         <tr><th>Residence time</th><td><span id="out-residence">—</span><span class="u">s</span></td></tr>
         <tr class="sep"><th>Burnt area</th><td><span id="out-area">—</span><span class="u">ha</span></td></tr>
@@ -266,6 +282,15 @@
     component along the front normal — no new constants, but it extends the
     law to directions it was never fitted against. <code>Isotropic</code> is
     the assumption-free baseline and is visibly wrong in wind.
+  </p>
+  <p>
+    <strong>The side view is derived, not drawn.</strong> Flame length is
+    Byram's <code>L_f = 0.0775·I_B^0.46</code>; the tilt is Byram's convective
+    Froude relation <code>tan θ = 0.88·√(U_mf²/gL_f)</code>, so the flame lies
+    over as wind rises and its vertical reach <code>H = L_f·cos θ</code> falls
+    even at constant flame length. The depth of the flaming zone is
+    <code>ROS × residence time</code>, read out of the arrival-time field
+    rather than assumed. Bed depth is Cheney's Table 3 measurement.
   </p>
   <p>
     <strong>The numbers are exact; the picture is a few percent slow.</strong>

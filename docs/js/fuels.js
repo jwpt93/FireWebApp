@@ -9,20 +9,42 @@
  * cited in unitiedmodel2's boundary.py canopy-roughness notes.
  */
 
+/**
+ * Surface-area-to-volume ratio [1/m].
+ *
+ * Cheney 1993 measured this directly: "The surface area-to-volume ratio (σ)
+ * for undisturbed pasture was: Eriachne 97.7 cm⁻¹; Themeda 122.4 cm⁻¹" —
+ * i.e. 9770 and 12240 m⁻¹. Eriachne is used here as the more conservative
+ * (coarser) of the two.
+ *
+ * The SAME value applies to both treatments, because the paper says so: "We
+ * did not attempt to measure σ for the treatments where the fuel was
+ * harvested and removed ... we assigned these treatments the σ value for the
+ * respective species." Cutting changed height and bulk density, not the
+ * fineness of the grass itself.
+ *
+ * NOT the σ = 2000 / 3500 that appears in the parent project's
+ * boundary.py canopy-roughness notes — those are drag-related effective
+ * values for the frontal-area index, and using them here inflated residence
+ * time about fivefold (38 s instead of 8 s), which showed up as an
+ * implausible 39 m deep flaming zone in the side view.
+ */
+const SAV_1_M = 9770;
+
 export const FUELS = Object.freeze({
   natural: {
     label: 'Natural pasture',
     a_ch: 0.406,                 // Cheney 1993 Fig 8 caption
     bulk_density_kg_m3: 1.07,    // Cheney 1993 Table 3 (undisturbed sward)
     depth_m: 0.37,               // Cheney 1993 Table 3
-    sav_1_m: 2000,               // Tyrer 1986 IJWF, Themeda/Eriachne analog
+    sav_1_m: SAV_1_M,            // Cheney 1993, Eriachne 97.7 cm^-1
   },
   cut: {
     label: 'Cut grass',
     a_ch: 0.343,                 // Cheney 1993 Fig 8 caption
     bulk_density_kg_m3: 2.95,    // Cheney 1993 Table 3 (cut and returned)
     depth_m: 0.15,               // Cheney 1993 Table 3
-    sav_1_m: 3500,               // Tyrer 1986 IJWF
+    sav_1_m: SAV_1_M,            // same species; see SAV_1_M note
   },
 });
 

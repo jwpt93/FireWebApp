@@ -6,16 +6,16 @@
 <!--
   Redirect stub for GitHub Pages.
 
-  The applet lives in web/ so that directory stays self-contained and
-  deployable on its own -- nothing it loads escapes its own root. GitHub Pages
-  serves from the repository root, so without this file the Pages URL would
-  land on a directory listing rather than the applet.
+  The applet lives in docs/, which is where this repo has GitHub Pages
+  configured to serve from (Settings -> Pages -> main / /docs). This stub only
+  matters if Pages is ever switched to serve the repository root instead --
+  then the root still lands on the applet rather than a directory listing.
 
   The target is relative, so this works unchanged at a user site, a project
   site under /FireWebApp/, or a local `python3 -m http.server`.
 -->
-<link rel="canonical" href="./web/">
-<meta http-equiv="refresh" content="0; url=./web/">
+<link rel="canonical" href="./docs/">
+<meta http-equiv="refresh" content="0; url=./docs/">
 <style>
   body {
     font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -28,7 +28,7 @@
 </style>
 </head>
 <body>
-  <p>Redirecting to the <a href="./web/">grass fire spread applet</a>…</p>
-  <script>location.replace('./web/');</script>
+  <p>Redirecting to the <a href="./docs/">grass fire spread applet</a>…</p>
+  <script>location.replace('./docs/');</script>
 </body>
 </html>

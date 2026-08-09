@@ -86,8 +86,10 @@ cheney-web/
 ├── scripts/
 │   ├── animations/                ← 3 Cheney animation scripts (matplotlib)
 │   ├── plots/                     ← Cheney sweep-vs-EXP plotters
-│   └── workers/                   ← per-case runners (spawn a single Cheney sim)
-├── docs/                          ← (empty — bring in from parent as needed)
+│   ├── workers/                   ← per-case runners (spawn a single Cheney sim)
+│   ├── web_export/                ← Tier-2 / Tier-3 precompute for the site
+│   └── gen_golden_vectors.py      ← golden vectors + Fig 8 data for the site
+├── docs/                          ← the published applet (GitHub Pages root)
 └── references/                    ← (empty)
 ```
 
@@ -176,18 +178,39 @@ Fig 8 envelope.
 
 ## Website (docs/)
 
-The repo ships a static site (plain HTML/JS, no build step, no backend)
-in [`docs/`](docs/), designed for GitHub Pages
-(**Settings → Pages → Deploy from a branch → `main` / `/docs`**):
+A static site — plain HTML/JS, no build step, no backend — in [`docs/`](docs/),
+deployed via GitHub Pages (**Settings → Pages → Deploy from a branch →
+`main` / `/docs`**). The repo root carries a redirect stub so the site still
+resolves if Pages is ever pointed at the root instead.
 
-- **Tier 1 runs live in the browser** —
-  [`docs/js/empirical.js`](docs/js/empirical.js) is a hand port of
-  `empirical_ros.py` (Cheney Eq. 6 + Marsden-Smedley), with sliders and the
-  digitized Fig 8 data overlaid.
-- **Tier 2 results are precomputed** into `docs/data/tier2/*.json`.
-- **Tier 3** animations are collected into `docs/assets/tier3/`.
+The applet runs the **2D level-set fire spread live in the browser**: a front
+propagating across a fuel bed, driven by the Cheney regression, with sliders
+for wind, moisture, wind direction, fuel type, ignition pattern and shape
+model. Readouts give rate of spread, Byram fireline intensity, flame length,
+fuel load, residence time, burnt area and perimeter, and a Fig 8 panel shows
+where the current settings sit inside the real experimental scatter.
 
-Local preview (fetch() requires http, opening index.html directly won't work):
+```
+docs/
+├── index.html          ← the applet
+├── js/cheney.js        ← Cheney 1993 law + Byram derived quantities
+├── js/levelset.js      ← 2D Godunov level-set front
+├── js/fuels.js         ← Cheney Table 3 bed properties, with provenance
+├── js/sim.js           ← front + arrival times + derived metrics
+├── js/firemap.js       ← fuel / burning / burnt canvas renderer
+├── js/fig8panel.js     ← Fig 8 overlay with a live marker
+├── js/app.js           ← control wiring and animation loop
+├── data/golden.json    ← generated; pins the JS to the Python reference
+├── data/fig8.json      ← generated; Fig 8 scatter
+├── data/tier2/         ← precomputed Tier-2 runs (15 cases)
+├── assets/tier3/       ← Tier-3 animation gallery manifest
+├── test.html           ← kernel cross-check, in-browser
+├── test.mjs            ← same checks, CLI
+├── simtest.mjs         ← simulation behaviour checks
+└── smoketest.mjs       ← headless boot test of the whole page
+```
+
+Local preview (`fetch()` and ES modules both need http, not `file://`):
 
 ```bash
 python3 -m http.server -d docs 8000   # → http://localhost:8000
@@ -196,22 +219,44 @@ python3 -m http.server -d docs 8000   # → http://localhost:8000
 Regenerating site data after model changes:
 
 ```bash
+# Tier-1 golden vectors + Fig 8 scatter (writes docs/data/)
+.venv/bin/python scripts/gen_golden_vectors.py
+
 # Tier-2 precompute (seconds; writes docs/data/tier2/)
 OMP_NUM_THREADS=8 .venv/bin/python scripts/web_export/export_tier2.py
 
 # Tier-3 gallery (after running a Tier-3 case + animation script)
 .venv/bin/python scripts/web_export/export_tier3_gallery.py
-
-# Verification: JS port matches Python, and the site's boot path runs clean
-.venv/bin/python scripts/web_export/export_tier1_reference.py
-node scripts/web_export/check_js_port.mjs
-node scripts/web_export/smoke_site.mjs
 ```
 
 The Tier-2 export decks live in `scripts/web_export/decks/` — they reuse the
 GR1 kinetics with Cheney bed parameters and a sustained 50 kW/m² source flux
 (required for the cascade; see `run_1d_spread` docstring). They are export
 artifacts, not validation cases.
+
+### History
+
+An earlier `docs/` applet (Tier-1 sliders + precomputed Tier-2 plots, by
+Timothy LaPlaca) was a demonstration of the deployment pattern rather than a
+final state, and has been replaced by the live simulation above. Kept from it,
+because they are additive rather than duplicated:
+
+- `scripts/web_export/export_tier2.py` and the 15 precomputed Tier-2 runs
+- `scripts/web_export/export_tier3_gallery.py` and the gallery manifest
+- the headless DOM-stub harness, now `docs/smoketest.mjs`
+
+Removed as superseded: `docs/js/empirical.js` (duplicate Tier-1 port —
+`docs/js/cheney.js` covers it and is pinned by golden vectors),
+`scripts/web_export/check_js_port.mjs` + `tier1_reference.json` +
+`export_tier1_reference.py` (superseded by `gen_golden_vectors.py`, which
+pins the level set too), and the old `docs/index.html` / `js/app.js` /
+`js/plot.js` / `css/style.css`.
+
+**Note for the earlier applet's author:** it plotted the Fig 8 scatter at its
+raw x-values against a U₁₀ model curve. Fig 8's x-axis is the **2 m** wind, so
+the scatter sat ~38% too far left and appeared to lie above the Eq. 6 curve it
+should straddle. Same root cause as the upstream bug fixed in `unitiedmodel2`
+on 2026-08-09; see the Fig 8 note above.
 
 ---
 
@@ -258,45 +303,7 @@ BC (10 unit tests), level-set FSD closure, and 3D flame-front forcing.
 
 ---
 
-## Web applet (in progress)
-
-`web/` holds the browser front end. No build step, no dependencies — plain
-ES modules and a canvas, in the spirit of Schroeder's Weber State fluid
-applet.
-
-```
-web/
-├── index.html        ← the applet
-├── js/cheney.js      ← Cheney 1993 law + Byram derived quantities
-├── js/levelset.js    ← 2D Godunov level-set front
-├── js/fuels.js       ← Cheney Table 3 fuel-bed properties, with provenance
-├── js/sim.js         ← simulation: front + arrival times + derived metrics
-├── js/firemap.js     ← fuel/burning/burnt canvas renderer
-├── js/fig8panel.js   ← Fig 8 overlay with a live marker
-├── js/app.js         ← UI wiring and animation loop
-├── data/golden.json  ← generated; pins the JS to the Python reference
-├── data/fig8.json    ← generated; Fig 8 scatter, so web/ is self-contained
-├── test.html         ← kernel cross-check page
-├── test.mjs          ← same checks, CLI
-└── simtest.mjs       ← simulation behaviour checks
-```
-
-Run it with `python3 -m http.server -d web 8000` — ES modules need HTTP, not
-`file://`. No build step and no dependencies; `web/package.json` exists only
-to tell Node the `.js` files are ES modules, and browsers ignore it.
-
-Two modes are planned:
-
-- **Mode A — predictive.** Front geometry is real (level-set front
-  propagation, exact); the spread *rate* is the Cheney regression. Correct
-  across the whole slider range by construction, but the mechanism is a
-  black box. **This is what currently exists.**
-- **Mode C — mechanistic.** Per-cell energy budget with radiant and
-  convective preheat, an ignition threshold, and residence-time burnout, so
-  spread *emerges*. One coefficient calibrated at a reference condition.
-  Not yet built.
-
-The delta between the two is the teaching content.
+## Applet — verification and future work
 
 ### Future work — exploit the steady state instead of re-solving it
 
@@ -333,15 +340,16 @@ agrees with the research code:
 
 ```bash
 .venv/bin/python scripts/gen_golden_vectors.py   # regenerate golden.json + fig8.json
-node web/test.mjs                                # kernels vs Python — 10/10
-node web/simtest.mjs                             # simulation behaviour — 16/16
-python3 -m http.server -d web 8000               # then open / or /test.html
+node docs/test.mjs        # kernels vs Python golden vectors  — 10/10
+node docs/simtest.mjs     # simulation behaviour              — 16/16
+node docs/smoketest.mjs   # headless boot of the whole page
+python3 -m http.server -d docs 8000              # then open / or /test.html
 ```
 
-`test.mjs` and `test.html` both call `runChecks()` in `web/js/selftest.js`, so
+`docs/test.mjs` and `docs/test.html` both call `runChecks()` in `docs/js/selftest.js`, so
 they cannot drift.
 
-`simtest.mjs` checks the layer built on top of the kernels — that the front
+`docs/simtest.mjs` checks the layer built on top of the kernels — that the front
 actually advances at the rate the Cheney law specifies, that wind steers and
 elongates it, that burnt area grows monotonically, and that the whole loop is
 bit-exact across runs.
@@ -360,7 +368,7 @@ amount. Measured for a point ignition at U₂ = 4 m/s, M = 6%:
 
 Clean first order. A **planar** front is exact (0.000%), so the scheme is
 right, just coarse. The grid stays at 1 m because cost scales as 1/dx³ —
-38 ms/frame at dx = 0.5 against a 16.7 ms budget. `simtest.mjs` pins the
+38 ms/frame at dx = 0.5 against a 16.7 ms budget. `docs/simtest.mjs` pins the
 convergence rather than a magic tolerance, so a real regression cannot hide
 behind it. Nudging the speed to make the picture match the readout would stop
 the level set from solving the equation it claims to; see the future-work note

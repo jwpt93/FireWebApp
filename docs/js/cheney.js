@@ -2,7 +2,7 @@
  * Cheney, Gould & Catchpole (1993) grassland rate-of-spread — JavaScript port.
  *
  * Reference implementation: src/model_outdoor/empirical_ros.py
- * Cross-checked against it by web/test.html using web/data/golden.json.
+ * Cross-checked against it by docs/test.html using docs/data/golden.json.
  *
  * THE LAW
  * -------

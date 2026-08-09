@@ -1,7 +1,7 @@
 /**
- * CLI cross-check runner — node web/test.mjs
+ * CLI cross-check runner — node docs/test.mjs
  *
- * Same checks as web/test.html (both call runChecks in js/selftest.js).
+ * Same checks as docs/test.html (both call runChecks in js/selftest.js).
  * Exits non-zero on any failure so it can gate a commit or CI job.
  */
 import { readFileSync } from 'node:fs';

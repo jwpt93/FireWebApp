@@ -1,5 +1,5 @@
 /**
- * Behavioural smoke test for the Mode A simulation — node web/simtest.mjs
+ * Behavioural smoke test for the Mode A simulation — node docs/simtest.mjs
  *
  * The golden vectors in test.mjs pin the KERNELS to the Python reference.
  * This file checks the thing built on top of them actually behaves like a

@@ -1,183 +1,295 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Grass Fire Rate-of-Spread — Cheney 1993</title>
-<meta name="description" content="Interactive grass-fire rate-of-spread models: empirical Cheney Eq. 6 live in your browser, plus precomputed 1D line-spread and 3D reactive-flow results.">
-<link rel="stylesheet" href="css/style.css">
+<title>Grass fire spread — Cheney 1993</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --surface-0: #f4f4f1;
+    --surface-1: #fcfcfb;
+    --border:    rgba(11,11,11,0.14);
+    --text-1:    #0b0b0b;
+    --text-2:    #52514e;
+    --text-3:    #83817a;
+    --accent:    #2a78d6;
+    --live:      #eb6834;
+    --warn-bg:   rgba(237,161,0,0.14);
+    --warn-ink:  #7a5300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface-0: #121211;
+      --surface-1: #1a1a19;
+      --border:    rgba(255,255,255,0.16);
+      --text-1:    #ffffff;
+      --text-2:    #c3c2b7;
+      --text-3:    #8c8b82;
+      --accent:    #3987e5;
+      --live:      #d95926;
+      --warn-bg:   rgba(201,133,0,0.20);
+      --warn-ink:  #f0c667;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --border:    rgba(255,255,255,0.16);
+    --text-1:    #ffffff;
+    --text-2:    #c3c2b7;
+    --text-3:    #8c8b82;
+    --accent:    #3987e5;
+    --live:      #d95926;
+    --warn-bg:   rgba(201,133,0,0.20);
+    --warn-ink:  #f0c667;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--text-1);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
+
+  header h1 { font-size: 1.4rem; margin: 0 0 .3rem; letter-spacing: -0.01em; }
+  header p  { margin: 0 0 1.25rem; color: var(--text-2); max-width: 60ch; }
+
+  .layout { display: grid; gap: 1.1rem; grid-template-columns: 1fr; }
+  @media (min-width: 940px) { .layout { grid-template-columns: 1fr 320px; } }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: .6rem;
+    padding: 1rem 1.1rem;
+  }
+  .card h2 {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--text-3); margin: 0 0 .85rem; font-weight: 600;
+  }
+
+  #map {
+    width: 100%; display: block; border-radius: .4rem;
+    image-rendering: pixelated; aspect-ratio: 240 / 160;
+    background: var(--surface-0);
+  }
+  .maprow { display: flex; align-items: center; gap: .6rem; margin-top: .8rem; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: .85rem; padding: .35rem .9rem;
+    border-radius: .35rem; border: 1px solid var(--border);
+    background: var(--surface-0); color: var(--text-1); cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .scale { margin-left: auto; color: var(--text-3); font-size: .78rem; }
+
+  .ctl { margin-bottom: .95rem; }
+  .ctl > label, .ctl > .grouplabel {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: .8rem; color: var(--text-2); margin-bottom: .3rem;
+  }
+  .ctl output { font-variant-numeric: tabular-nums; color: var(--text-1); font-weight: 600; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .seg { display: flex; gap: .35rem; }
+  .seg label {
+    flex: 1; text-align: center; font-size: .78rem; padding: .3rem .2rem;
+    border: 1px solid var(--border); border-radius: .3rem; cursor: pointer;
+    color: var(--text-2);
+  }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg input:checked + span { color: var(--text-1); font-weight: 600; }
+  .seg label:has(input:checked) { border-color: var(--accent); background: var(--surface-0); }
+
+  table.out { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  table.out th {
+    text-align: left; font-weight: 400; color: var(--text-2); padding: .28rem 0;
+  }
+  table.out td {
+    text-align: right; font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, Menlo, Consolas, monospace; padding: .28rem 0;
+  }
+  table.out td .u { color: var(--text-3); font-size: .78em; margin-left: .25em; }
+  table.out tr.sep td, table.out tr.sep th { border-top: 1px solid var(--border); padding-top: .5rem; }
+
+  #fig8 { width: 100%; aspect-ratio: 4 / 3; display: block; }
+  .legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .74rem; color: var(--text-2); margin-top: .5rem; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .3rem; vertical-align: -1px; }
+  .legend .ref  { background: var(--accent); border-radius: 0; height: 2px; width: 16px; vertical-align: 3px; }
+  .legend .live { background: var(--live); }
+  .legend .exp  { background: var(--text-3); opacity: .55; }
+
+  .note {
+    background: var(--warn-bg); color: var(--warn-ink);
+    border-radius: .4rem; padding: .55rem .8rem; font-size: .8rem; margin-top: .8rem;
+  }
+  footer {
+    margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-size: .8rem; color: var(--text-2); max-width: 78ch;
+  }
+  footer strong { color: var(--text-1); }
+  footer code {
+    font-size: .92em; background: var(--surface-1);
+    padding: .05em .35em; border-radius: .2rem;
+  }
+</style>
 </head>
 <body>
+<div class="wrap">
 
 <header>
-  <h1>Grass Fire Rate-of-Spread</h1>
-  <p class="byline">
-    Three tiers of fire-spread physics, from a one-line empirical fit to a full 3D reactive-flow solver.
-    Code: <a href="https://github.com/jwpt93/FireWebApp">github.com/jwpt93/FireWebApp</a>
+  <h1>Grass fire spread</h1>
+  <p>
+    A fire front propagating across a grass fuel bed. The spread rate comes from
+    the Cheney, Gould &amp; Catchpole (1993) grassland regression; the shape the
+    fire takes is worked out by the model, not prescribed.
   </p>
 </header>
 
-<main>
+<div class="layout">
 
-<!-- ── Preset cases (Schroeder-style button row) ─────────────────────────── -->
-<section id="presets">
-  <span class="row-label">Preset cases:</span>
-  <span id="preset-buttons"></span>
-</section>
-
-<!-- ── Tier 1: interactive empirical model ───────────────────────────────── -->
-<section id="tier1">
-  <h2>Tier 1 — Empirical model (live in your browser)</h2>
-
-  <div class="panel-grid">
-    <canvas id="tier1-plot" class="plot" height="360"></canvas>
-
-    <div class="controls">
-      <div class="control">
-        <label for="wind">Wind speed <span id="wind-symbol">U<sub>10</sub></span>:
-          <strong id="wind-value"></strong> m/s</label>
-        <input type="range" id="wind" min="0" max="8" step="0.1" value="4">
+  <div>
+    <div class="card">
+      <h2>Fuel bed <span id="domain" style="text-transform:none;letter-spacing:0"></span></h2>
+      <canvas id="map"></canvas>
+      <div class="maprow">
+        <button id="playpause">Pause</button>
+        <button id="reset">Reset</button>
+        <span class="scale">elapsed <strong id="out-time">0:00</strong> ·
+          <span id="speedval">20×</span> real time</span>
       </div>
-
-      <div class="control">
-        <label for="moisture">Fuel moisture <em>M</em>: <strong id="moisture-value"></strong> %</label>
-        <input type="range" id="moisture" min="0" max="30" step="0.5" value="4">
+      <div class="note" id="edgenote" hidden>
+        The fire has reached the edge of the domain. Reset to run again.
       </div>
-
-      <div class="control" id="age-control" hidden>
-        <label for="age">Stand age: <strong id="age-value"></strong> yr</label>
-        <input type="range" id="age" min="1" max="50" step="1" value="10">
+      <div class="note" id="extrap" hidden>
+        <strong>Extrapolating.</strong> <span id="extrap-why"></span> — beyond
+        the conditions Cheney's fires actually covered, so the rate below is
+        the regression extended past its data.
       </div>
+    </div>
 
-      <fieldset class="control" id="fuel-picker">
-        <legend>Fuel (Cheney 1993)</legend>
-        <label><input type="radio" name="fuel" value="natural" checked>
-          Natural pasture (<em>a</em><sub>ch</sub> = 0.406)</label>
-        <label><input type="radio" name="fuel" value="cut">
-          Cut grass (<em>a</em><sub>ch</sub> = 0.343)</label>
-      </fieldset>
-
-      <fieldset class="control" id="model-picker">
-        <legend>Model</legend>
-        <label><input type="radio" name="model" value="cheney_eq6" checked>
-          Cheney Eq. 6 (grass)</label>
-        <label><input type="radio" name="model" value="marsden_smedley">
-          Marsden-Smedley (buttongrass)</label>
-      </fieldset>
-
-      <div id="tier1-readout" class="readout"></div>
+    <div class="card" style="margin-top:1.1rem">
+      <h2>Where this sits in the experiment</h2>
+      <canvas id="fig8"></canvas>
+      <div class="legend">
+        <span><i class="exp"></i>Cheney 1993 Fig 8 measurements</span>
+        <span><i class="ref"></i>Eq. 6 fit at M = 4% and 8%</span>
+        <span><i class="live"></i>current settings</span>
+      </div>
     </div>
   </div>
 
-  <p class="caption" id="tier1-caption"></p>
-</section>
+  <div>
+    <div class="card">
+      <h2>Conditions</h2>
 
-<!-- ── Tier 2: precomputed 1D line spread ────────────────────────────────── -->
-<section id="tier2">
-  <h2>Tier 2 — 1D flame-line spread (precomputed)</h2>
+      <div class="ctl">
+        <label for="wind">Wind at 2 m <output id="windval">4.0 m/s</output></label>
+        <input type="range" id="wind" min="0.5" max="10" step="0.1" value="4">
+      </div>
 
-  <div class="controls controls-inline">
-    <span class="row-label">Fuel:</span>
-    <span id="tier2-fuel-buttons"></span>
-    <span class="row-label">U<sub>10</sub>:</span>
-    <span id="tier2-wind-buttons"></span>
+      <div class="ctl">
+        <label for="moisture">Fuel moisture <output id="moistureval">6 %</output></label>
+        <input type="range" id="moisture" min="2" max="20" step="0.5" value="6">
+      </div>
+
+      <div class="ctl">
+        <label for="winddir">Wind direction <output id="winddirval">0°</output></label>
+        <input type="range" id="winddir" min="0" max="360" step="5" value="0">
+      </div>
+
+      <div class="ctl">
+        <span class="grouplabel">Fuel type</span>
+        <div class="seg">
+          <label><input type="radio" name="fuel" value="natural" checked><span id="fuel-natural-label">Natural</span></label>
+          <label><input type="radio" name="fuel" value="cut"><span id="fuel-cut-label">Cut</span></label>
+        </div>
+      </div>
+
+      <div class="ctl">
+        <span class="grouplabel">Ignition</span>
+        <div class="seg">
+          <label><input type="radio" name="ignition" value="point" checked><span>Point</span></label>
+          <label><input type="radio" name="ignition" value="line"><span>Line</span></label>
+        </div>
+      </div>
+
+      <div class="ctl">
+        <span class="grouplabel">Shape model</span>
+        <div class="seg">
+          <label><input type="radio" name="shape" value="windProjected" checked><span>Wind-projected</span></label>
+          <label><input type="radio" name="shape" value="isotropic"><span>Isotropic</span></label>
+        </div>
+      </div>
+
+      <div class="ctl" style="margin-bottom:0">
+        <label for="speed">Playback speed <output id="speedval2"></output></label>
+        <input type="range" id="speed" min="1" max="60" step="1" value="20">
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1.1rem">
+      <h2>Fire behaviour</h2>
+      <table class="out">
+        <tr><th>Head rate of spread</th><td><span id="out-ros">—</span><span class="u">m/min</span></td></tr>
+        <tr><th></th><td><span id="out-ros-ms">—</span><span class="u">m/s</span></td></tr>
+        <tr><th>Fireline intensity</th><td><span id="out-intensity">—</span><span class="u">kW/m</span></td></tr>
+        <tr><th>Flame length</th><td><span id="out-flame">—</span><span class="u">m</span></td></tr>
+        <tr class="sep"><th>Fuel load</th><td><span id="out-load">—</span><span class="u">kg/m²</span></td></tr>
+        <tr><th>Residence time</th><td><span id="out-residence">—</span><span class="u">s</span></td></tr>
+        <tr class="sep"><th>Burnt area</th><td><span id="out-area">—</span><span class="u">ha</span></td></tr>
+        <tr><th>Perimeter</th><td><span id="out-perimeter">—</span><span class="u">m</span></td></tr>
+      </table>
+    </div>
   </div>
 
-  <div class="panel-grid">
-    <canvas id="tier2-traces" class="plot" height="300"></canvas>
-    <canvas id="tier2-ros" class="plot" height="300"></canvas>
-  </div>
-
-  <div id="tier2-readout" class="readout"></div>
-  <p class="caption" id="tier2-caption"></p>
-</section>
-
-<!-- ── Tier 3: 3D reactive flow gallery ──────────────────────────────────── -->
-<section id="tier3">
-  <h2>Tier 3 — 3D reactive flow (gallery)</h2>
-  <div id="tier3-gallery"></div>
-  <p class="caption">
-    Full 3D k-&epsilon; RANS + EDC combustion + DOM radiation + Lagrangian bed particles,
-    10 minutes to 1 hour per case. Runs are added as they complete.
-  </p>
-</section>
-
-<!-- ── Explanation ────────────────────────────────────────────────────────── -->
-<section id="about">
-  <h2>What you are looking at</h2>
-
-  <p>The same input conditions — wind speed, fuel moisture, fuel bed — pushed through
-  three progressively richer representations of grass-fire spread physics:</p>
-
-  <p><strong>Tier 1</strong> is the closed-form regression of
-  <a href="https://doi.org/10.1071/WF9980001">Cheney, Gould &amp; Catchpole (1998), Eq. 6</a>,
-  fit to the Australian grass-fire experiments of
-  <a href="https://doi.org/10.1071/WF9930031">Cheney, Gould &amp; Catchpole (1993)</a>:
-  ROS&nbsp;=&nbsp;<em>a</em><sub>ch</sub>·U₂<sup>0.987</sup>·exp(−0.0707·M%).
-  It runs in microseconds — the curve and readout above are computed by JavaScript
-  in this page (View Source to see), and the scatter points are the digitized
-  Fig.&nbsp;8 experimental data the regression fits. The Marsden-Smedley model
-  (<a href="https://doi.org/10.1071/WF9950215">1995</a>) is the equivalent
-  regression for Tasmanian buttongrass moorland, with wind measured at 1.7&nbsp;m
-  and a fuel build-up factor for stand age.</p>
-
-  <p><strong>Tier 2</strong> replaces the regression with a resolved pyrolysis
-  model: a cascade of 1D fuel elements, each running a two-step pyrolysis ROM
-  (kinetics transferred from cone-calorimeter wheat-straw data), heated by
-  radiation from upstream burning cells (Albini line-source view factor with
-  Beer–Lambert blocking) plus wind-driven convective preheating. Each run takes
-  a fraction of a second on the server; results above are precomputed snapshots.
-  The source cell is driven by a sustained 50&nbsp;kW/m² flux; downstream cells
-  must ignite from spread flux alone.</p>
-
-  <p><strong>Tier 3</strong> is the full thing: 3D k-&epsilon; RANS with EDC
-  combustion, discrete-ordinates radiation, Lagrangian fuel particles and a
-  level-set front — hours of compute per case, rendered as animations.</p>
-
-  <h3>Limitations (read these)</h3>
-  <ul>
-    <li><strong>Tier 1</strong> is a regression over a specific dataset
-      (Annaburroo, NT, Australia): flat ground, cured grass, U<sub>10</sub> ≲ 8 m/s.
-      It interpolates well and extrapolates badly.</li>
-    <li><strong>Tier 2</strong> underpredicts field spread rates by one to two
-      orders of magnitude: a single line of 1D elements captures radiative
-      ignition physics but not the convective flame-attachment mechanism that
-      drives real grass-fire propagation. Treat its numbers as
-      mechanism-demonstration, not prediction — that is exactly why Tier 3
-      (and the empirical forcing used in its low-wind regime) exists.</li>
-    <li>At U<sub>10</sub> &lt; ~1.4 m/s fires spread by intermittent flame
-      tongues (Finney et al. 2015), a variance mechanism no mean-field closure
-      represents; production simulators switch to empirical forcing there too.</li>
-    <li>No slope, no spotting, no fire-shape effects, homogeneous fuel only.</li>
-  </ul>
-
-  <h3>References</h3>
-  <ul class="refs">
-    <li>Cheney NP, Gould JS, Catchpole WR (1993). The influence of fuel, weather and
-      fire shape variables on fire-spread in grasslands. <em>Int. J. Wildland Fire</em> 3(1): 31–44.</li>
-    <li>Cheney NP, Gould JS, Catchpole WR (1998). Prediction of fire spread in grasslands.
-      <em>Int. J. Wildland Fire</em> 8(1): 1–13.</li>
-    <li>Marsden-Smedley JB, Catchpole WR (1995). Fire behaviour modelling in Tasmanian
-      buttongrass moorlands. <em>Int. J. Wildland Fire</em> 5(4): 215–228.</li>
-    <li>Albini FA (1985). A model for fire spread in wildland fuels by radiation.
-      <em>Combust. Sci. Tech.</em> 42: 229–258.</li>
-    <li>Finney MA et al. (2015). Role of buoyant flame dynamics in wildfire spread.
-      <em>PNAS</em> 112: 9833–9838.</li>
-  </ul>
-
-  <p class="view-source">This site is plain HTML/JavaScript with no build step —
-  use your browser's View Source to read the simulation code. Model parameters and
-  per-case decks are in the <a href="https://github.com/jwpt93/FireWebApp">repository</a>.</p>
-</section>
-
-</main>
+</div>
 
 <footer>
-  <p>Reduced-order fire-spread models from the
-  <code>unitiedmodel2</code> research project. Experimental data digitized from
-  Cheney et al. (1993), Fig. 8.</p>
+  <p>
+    <strong>What is real and what is fitted.</strong> The front propagation is
+    exact geometry — an arbitrary ignition evolves into a fire shape, separate
+    fronts merge, the perimeter wraps an obstacle, none of it prescribed. Fuel
+    consumption and Byram fireline intensity are conservation statements. The
+    local spread <em>rate</em> is a regression fitted to 1980s experimental
+    fires at Annaburroo, N.T., and the flame length is a separate correlation.
+    So the fire's organisation is modelled; its speed is measured.
+  </p>
+  <p>
+    <strong>Fire shape is a modelling choice.</strong> Cheney 1993 reports a
+    head-fire rate of spread only — its own “fire shape” variable is a
+    categorical head-fire shape (pointed vs parabolic), used as a regression
+    covariate. The paper contains no length-to-breadth or elliptical relation,
+    so turning one number into a 2D front needs an assumption it does not
+    supply. <code>Wind-projected</code> evaluates the fitted law at the wind
+    component along the front normal — no new constants, but it extends the
+    law to directions it was never fitted against. <code>Isotropic</code> is
+    the assumption-free baseline and is visibly wrong in wind.
+  </p>
+  <p>
+    <strong>The numbers are exact; the picture is a few percent slow.</strong>
+    Every figure in the readout and the position of the marker on the plot are
+    evaluated straight from the law, so they carry no numerical error. The
+    animation is a level set on a 1 m grid, and first-order upwinding lags a
+    <em>curved</em> front by an amount proportional to cell size — about 6% for
+    a point ignition here, falling to 3.4% at 0.5 m and 1.8% at 0.25 m. A
+    straight front is reproduced exactly. The grid stays at 1 m because
+    halving it costs eight times the work per frame, and correcting the
+    discrepancy by nudging the speed would stop the model from solving the
+    equation it claims to.
+  </p>
+  <p>
+    Cheney NP, Gould JS, Catchpole WR (1993). “The influence of fuel, weather
+    and fire shape variables on fire-spread in grasslands.”
+    <em>International Journal of Wildland Fire</em> 3(1): 31–44. Fireline
+    intensity and flame length after Byram (1959); residence time after
+    Anderson (1969). Wind is the 2 m reference throughout, which is the
+    paper's own variable.
+  </p>
 </footer>
 
-<script type="module" src="js/app.js"></script>
+</div>
+<script type="module" src="./js/app.js"></script>
 </body>
 </html>

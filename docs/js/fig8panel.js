@@ -54,7 +54,7 @@ const THEME = {
 export class Fig8Panel {
   /**
    * @param {HTMLCanvasElement} canvas
-   * @param {object} fig8  parsed web/data/fig8.json
+   * @param {object} fig8  parsed docs/data/fig8.json
    */
   constructor(canvas, fig8) {
     this.canvas = canvas;

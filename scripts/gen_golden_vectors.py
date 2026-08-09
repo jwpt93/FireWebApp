@@ -7,7 +7,7 @@ The web applet reimplements two things in JavaScript:
                                               flame_front_3d.py (3D, reduced)
 
 Both are hand ports, so both need proof they still agree with the research
-code.  This script emits web/data/golden.json; web/test.html loads it, runs
+code.  This script emits docs/data/golden.json; docs/test.html loads it, runs
 the JS, and reports any disagreement.
 
 For (1) we call the actual project function, so the vectors cannot drift
@@ -36,8 +36,8 @@ from model_outdoor.empirical_ros import (  # noqa: E402
     cheney_eq6_ros_m_per_s,
 )
 
-OUT = ROOT / "web" / "data" / "golden.json"
-OUT_FIG8 = ROOT / "web" / "data" / "fig8.json"
+OUT = ROOT / "docs" / "data" / "golden.json"
+OUT_FIG8 = ROOT / "docs" / "data" / "fig8.json"
 SRC_FIG8 = ROOT / "data" / "cheney_experimental"
 
 
@@ -239,9 +239,9 @@ def levelset_vectors() -> dict:
 # ---------------------------------------------------------------------------
 
 def fig8_for_web() -> dict:
-    """Merge the v1 + v2 digitisations into one payload web/ can fetch.
+    """Merge the v1 + v2 digitisations into one payload docs/ can fetch.
 
-    Emitted into web/ so the published page is self-contained -- it can be
+    Emitted into docs/ so the published page is self-contained -- it can be
     served from web/ alone, with no path escaping the deploy root.
 
     x is U_2, the paper's own variable: Cheney 1993 Table 2 defines u2 as

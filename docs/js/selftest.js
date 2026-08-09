@@ -2,8 +2,8 @@
  * Cross-check the JS port against golden vectors from the Python reference.
  *
  * Shared by two front ends so the check logic cannot drift between them:
- *   web/test.html  — browser, renders a table
- *   web/test.mjs   — node, prints to stdout and sets the exit code
+ *   docs/test.html  — browser, renders a table
+ *   docs/test.mjs   — node, prints to stdout and sets the exit code
  *
  * Regenerate the vectors with scripts/gen_golden_vectors.py.
  */
@@ -74,7 +74,7 @@ function replayLevelSet(c) {
 }
 
 /**
- * @param {object} golden  parsed web/data/golden.json
+ * @param {object} golden  parsed docs/data/golden.json
  * @returns {{name: string, detail: string, ok: boolean, extra: string}[]}
  */
 export function runChecks(golden) {

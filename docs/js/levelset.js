@@ -3,8 +3,8 @@
  *
  * Mirrors the discretisation of the parent project's 3D tracker in
  * src/model_outdoor/physics_3d/flame_front_3d.py, reduced to two dimensions.
- * Cross-checked against a NumPy reference by web/test.html using
- * web/data/golden.json.
+ * Cross-checked against a NumPy reference by docs/test.html using
+ * docs/data/golden.json.
  *
  * GOVERNING EQUATION
  * ------------------

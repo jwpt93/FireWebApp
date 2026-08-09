@@ -225,11 +225,24 @@ applet.
 
 ```
 web/
+├── index.html        ← the applet
 ├── js/cheney.js      ← Cheney 1993 law + Byram derived quantities
 ├── js/levelset.js    ← 2D Godunov level-set front
+├── js/fuels.js       ← Cheney Table 3 fuel-bed properties, with provenance
+├── js/sim.js         ← simulation: front + arrival times + derived metrics
+├── js/firemap.js     ← fuel/burning/burnt canvas renderer
+├── js/fig8panel.js   ← Fig 8 overlay with a live marker
+├── js/app.js         ← UI wiring and animation loop
 ├── data/golden.json  ← generated; pins the JS to the Python reference
-└── test.html         ← cross-check page
+├── data/fig8.json    ← generated; Fig 8 scatter, so web/ is self-contained
+├── test.html         ← kernel cross-check page
+├── test.mjs          ← same checks, CLI
+└── simtest.mjs       ← simulation behaviour checks
 ```
+
+Run it with `python3 -m http.server -d web 8000` — ES modules need HTTP, not
+`file://`. No build step and no dependencies; `web/package.json` exists only
+to tell Node the `.js` files are ES modules, and browsers ignore it.
 
 Two modes are planned:
 
@@ -244,19 +257,73 @@ Two modes are planned:
 
 The delta between the two is the teaching content.
 
+### Future work — exploit the steady state instead of re-solving it
+
+Once wind, moisture and fuel stop changing, the applet is solving the same
+problem every frame. With `v_n = V·(n·ŵ)` the level-set equation reduces to
+
+```
+φ_t + V ŵ·∇φ = 0
+```
+
+which is **pure translation** — the reason the planar-front test reproduces the
+Cheney rate to 0.000%. So once the front is quasi-steady, the field could be
+scrolled rather than stepped.
+
+Two things fall out of that:
+
+- **Cycle.** Detect the quasi-steady regime and translate the rendered field at
+  the analytic rate instead of integrating. Nearly free per frame.
+- **Cycle and refine.** Spend the reclaimed budget on resolution: precompute a
+  converged front once at `dx = 0.25 m` (1.8% head-rate error) instead of
+  running `dx = 1.0 m` live (5.9%), then translate it at the exact rate. That
+  recovers both the accuracy and the frame rate currently traded against each
+  other.
+
+Caveat to check first: the backing floor makes flanks and rear expand at
+`0.05·V`, so the fire still grows and the shape is not strictly invariant. It
+should approach a steady form in a co-moving frame after the transient — that
+needs measuring before the optimisation is safe.
+
 ### Verifying the port
 
 The JS is a hand port, so it ships with golden vectors proving it still
 agrees with the research code:
 
 ```bash
-.venv/bin/python scripts/gen_golden_vectors.py   # regenerate the vectors
-node web/test.mjs                                # CLI; exit code gates CI
-python3 -m http.server -d web 8000               # or open /test.html
+.venv/bin/python scripts/gen_golden_vectors.py   # regenerate golden.json + fig8.json
+node web/test.mjs                                # kernels vs Python — 10/10
+node web/simtest.mjs                             # simulation behaviour — 16/16
+python3 -m http.server -d web 8000               # then open / or /test.html
 ```
 
-Both runners call `runChecks()` in `web/js/selftest.js`, so they cannot
-drift. Current status: **10/10 pass** (node v18).
+`test.mjs` and `test.html` both call `runChecks()` in `web/js/selftest.js`, so
+they cannot drift.
+
+`simtest.mjs` checks the layer built on top of the kernels — that the front
+actually advances at the rate the Cheney law specifies, that wind steers and
+elongates it, that burnt area grows monotonically, and that the whole loop is
+bit-exact across runs.
+
+**A known, measured limitation.** Readouts and the Fig 8 marker are evaluated
+analytically from the law and are exact. The *animation* is a level set on a
+1 m grid, and first-order upwinding lags a **curved** front by an O(dx)
+amount. Measured for a point ignition at U₂ = 4 m/s, M = 6%:
+
+| dx [m] | head-rate error |
+|---|---|
+| 2.0 | −10.4% |
+| 1.0 | −5.9% ← shipped |
+| 0.5 | −3.4% |
+| 0.25 | −1.8% |
+
+Clean first order. A **planar** front is exact (0.000%), so the scheme is
+right, just coarse. The grid stays at 1 m because cost scales as 1/dx³ —
+38 ms/frame at dx = 0.5 against a 16.7 ms budget. `simtest.mjs` pins the
+convergence rather than a magic tolerance, so a real regression cannot hide
+behind it. Nudging the speed to make the picture match the readout would stop
+the level set from solving the equation it claims to; see the future-work note
+above for the fix that gets both.
 
 The level-set cases must be **bit-exact** — their speed fields use only
 IEEE-exact operations, so any difference means the discretisation diverged.

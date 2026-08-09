@@ -37,6 +37,8 @@ from model_outdoor.empirical_ros import (  # noqa: E402
 )
 
 OUT = ROOT / "web" / "data" / "golden.json"
+OUT_FIG8 = ROOT / "web" / "data" / "fig8.json"
+SRC_FIG8 = ROOT / "data" / "cheney_experimental"
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +234,45 @@ def levelset_vectors() -> dict:
     return {"cases": cases}
 
 
+# ---------------------------------------------------------------------------
+# 4. Cheney Fig 8 experimental scatter, for the applet's overlay panel
+# ---------------------------------------------------------------------------
+
+def fig8_for_web() -> dict:
+    """Merge the v1 + v2 digitisations into one payload web/ can fetch.
+
+    Emitted into web/ so the published page is self-contained -- it can be
+    served from web/ alone, with no path escaping the deploy root.
+
+    x is U_2, the paper's own variable: Cheney 1993 Table 2 defines u2 as
+    "Wind speed at 2 m", and the printed Fig 8 axis reads the same.  The
+    applet's wind slider is U_2 for exactly this reason -- the model dot and
+    the experimental scatter then share an axis with no conversion anywhere.
+
+    KNOWN: the v1 `cut` digitisation runs ~17% low against v2 over
+    U_2 in [3, 6] (implied Cheney coefficient 0.1744 vs 0.2071).  That ratio,
+    0.84, is not the 0.723 wind-convention factor, so it is a digitisation
+    disagreement rather than a unit error.  Both are shipped and tagged by
+    source so the applet can show or hide either.
+    """
+    out = {"_meta": {
+        "columns": ["U_2_m_s", "ROS_m_s"],
+        "source": "Cheney, Gould & Catchpole (1993) IJWF 3(1):31-44, Fig 8, "
+                  "user-digitised. x is the 2-m wind (Table 2; printed axis).",
+        "caption_moistures_pct": [4, 8],
+        "note": "v1 `cut` runs ~17% low vs v2 over U_2 in [3,6] -- a "
+                "digitisation disagreement, not a unit error.",
+    }}
+    for fuel in ("natural", "cut"):
+        rows = []
+        for fname, tag in (("cheney1993_fig8_data_v2.json", "v2"),
+                           ("cheney1993_fig8_data.json", "v1")):
+            doc = json.loads((SRC_FIG8 / fname).read_text())
+            rows += [[U, R, tag] for U, R in doc.get(fuel, [])]
+        out[fuel] = rows
+    return out
+
+
 def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -265,6 +306,12 @@ def main() -> None:
     print(f"  levelset : {len(payload['levelset']['cases'])} cases, "
           f"{n_ls} field values")
     print(f"  size     : {OUT.stat().st_size / 1024:.1f} kB")
+
+    fig8 = fig8_for_web()
+    OUT_FIG8.write_text(json.dumps(fig8))
+    print(f"wrote {OUT_FIG8.relative_to(ROOT)}")
+    print(f"  scatter  : {len(fig8['natural'])} natural + {len(fig8['cut'])} cut "
+          f"({OUT_FIG8.stat().st_size / 1024:.1f} kB)")
 
 
 if __name__ == "__main__":

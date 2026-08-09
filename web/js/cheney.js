@@ -178,12 +178,17 @@ export function isotropicSpeed(headRos_m_s) {
  * Wind-projected: evaluate the Cheney law at the component of wind along
  * the front normal.
  *
- *     v_n(n) = R( U_2 · max(n · w, 0) ) + R_back
+ *     v_n(n) = max( R( U_2 · max(n · w, 0) ),  R_back )
  *
  * where w is the unit wind vector.  Uses only the fitted law and no new
  * constants, at the cost of extrapolating that law to off-axis directions
  * it was never fitted against.  The small isotropic R_back keeps the flanks
  * and rear moving, which is what stops the front pinching to a cusp.
+ *
+ * R_back is a FLOOR, not an offset added on top.  Adding it would make the
+ * head run at (1 + backingFrac) × the Cheney rate, breaking the one thing
+ * this mode guarantees: at the head, where n is aligned with the wind,
+ * v_n is exactly the published rate of spread.
  *
  * @param {number} U2_m_s        2 m wind speed [m/s]
  * @param {number} moistureFrac  moisture as a fraction
@@ -200,6 +205,7 @@ export function windProjectedSpeed(U2_m_s, moistureFrac, aCh, windDirRad, backin
   return (nx, ny) => {
     const proj = nx * wx + ny * wy;
     if (!(proj > 0)) return back;
-    return rosFromU2(U2_m_s * proj, moistureFrac, aCh) + back;
+    const v = rosFromU2(U2_m_s * proj, moistureFrac, aCh);
+    return v > back ? v : back;
   };
 }

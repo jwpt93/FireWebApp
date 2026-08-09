@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>cheney-web — JS/Python cross-check</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    margin: 0 auto; padding: 2rem 1.5rem; max-width: 60rem;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  p.sub { margin: 0 0 1.5rem; opacity: .7; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 1.5rem; }
+  th, td { text-align: left; padding: .35rem .6rem; border-bottom: 1px solid rgba(128,128,128,.3); }
+  th { font-weight: 600; opacity: .75; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pass { color: #1a7f37; font-weight: 600; }
+  .fail { color: #cf222e; font-weight: 600; }
+  #summary { padding: .9rem 1.1rem; border-radius: .4rem; margin: 0 0 1.5rem; font-weight: 600; }
+  #summary.ok { background: rgba(26,127,55,.12); }
+  #summary.bad { background: rgba(207,34,46,.12); }
+  code { background: rgba(128,128,128,.15); padding: .1rem .3rem; border-radius: .2rem; }
+</style>
+
+<h1>cheney-web — JS/Python cross-check</h1>
+<p class="sub">
+  Runs the JavaScript in <code>web/js/</code> against golden vectors emitted by
+  the Python reference in <code>src/model_outdoor/</code>.
+  Regenerate the vectors with <code>scripts/gen_golden_vectors.py</code>.
+  Same checks as <code>node web/test.mjs</code> — both call
+  <code>runChecks()</code> in <code>js/selftest.js</code>.
+</p>
+
+<div id="summary">running…</div>
+<div id="out"></div>
+
+<script type="module">
+import { runChecks } from './js/selftest.js';
+
+const golden = await (await fetch('./data/golden.json')).json();
+const groups = runChecks(golden);
+
+const nPass = groups.filter(g => g.ok).length;
+const summary = document.getElementById('summary');
+summary.textContent = `${nPass}/${groups.length} checks passed`;
+summary.className = nPass === groups.length ? 'ok' : 'bad';
+
+document.getElementById('out').innerHTML =
+  `<table><tr><th></th><th>check</th><th>detail</th></tr>` +
+  groups.map(g => `
+    <tr>
+      <td class="${g.ok ? 'pass' : 'fail'}">${g.ok ? 'PASS' : 'FAIL'}</td>
+      <td>${g.name}</td>
+      <td>${g.detail}${g.extra ? `<br><small>${g.extra}</small>` : ''}</td>
+    </tr>`).join('') +
+  `</table>`;
+</script>

@@ -23,10 +23,15 @@ representations of the physics:
 Closed-form regression from Cheney, Gould & Catchpole 1993 (Fig 8):
 
 ```
-ROS [m/s] = (a_ch / 60) · U_2^0.987 · exp(−0.0707 · M_pct)
+ROS [m/s] = a_ch · U_2^0.987 · exp(−0.0707 · M_pct)
 U_2 = U_10 · 0.723   (10 m to 2 m log-law extrapolation)
 a_ch = 0.406 (natural pasture) or 0.343 (cut grass)
 ```
+
+`U_2` is the paper's native variable — Table 2 defines it as "Wind speed at
+2 m", and the printed x-axis of Fig 8 is "Wind speed at 2 m (ms⁻¹)".
+`cheney_eq6_ros_m_per_s()` takes **U_10** and applies the 0.723 factor
+internally, so do not pre-convert. Mixing the two conventions costs 27–38%.
 
 - Zero compute cost per call → suitable for interactive sliders in a
   browser (embed via Pyodide, or reimplement in JS in <20 lines).
@@ -111,7 +116,7 @@ from model_outdoor.empirical_ros import CheneyEq6
 
 model = CheneyEq6()
 ros_m_s = model.ros(
-    U_m_s=4.0,          # wind at 2 m reference height
+    U_m_s=4.0,          # wind at 10 m; the 0.723 factor is applied inside
     moisture_frac=0.04, # 4% (mass fraction)
     a_ch=0.406,         # 0.406 natural pasture, 0.343 cut grass
 )
@@ -151,10 +156,18 @@ Outputs go to `local/diagnostics/` (created on first run).
 
 `data/cheney_experimental/`:
 - `cheney1993.pdf` — the paper.
-- `cheney1993_fig8_data_v2.json` — digitised Fig 8 (ROS vs U_10 for
+- `cheney1993_fig8_data_v2.json` — digitised Fig 8 (ROS vs **U_2** for
   natural / cut grass at various moisture bins). This is the target
   the Tier-3 sweep validates against, and the empirical Tier 1 is
   the closed-form fit to.
+
+  **Known defect:** the file's `_meta.columns` says `U_10_m_s`, but the
+  x-values are U_2 — Fig 8's printed axis is the 2 m wind. Confirmed
+  statistically: read as U_2 the implied `a·exp(−0.0707·M)` lands between
+  the M=4% and M=8% curves (natural median 0.2705 vs the [0.2306, 0.3060]
+  band); read as U_10 it sits above both, implying M < 4% and contradicting
+  the figure caption. The label is wrong, not the data — do not "fix" it by
+  rescaling the values.
 
 Plotting scripts in `scripts/plots/` overlay model results on the
 Fig 8 envelope.
@@ -203,6 +216,53 @@ bit-exact projection determinism, DOM moisture radiation, moisture-jump
 BC (10 unit tests), level-set FSD closure, and 3D flame-front forcing.
 
 ---
+
+## Web applet (in progress)
+
+`web/` holds the browser front end. No build step, no dependencies — plain
+ES modules and a canvas, in the spirit of Schroeder's Weber State fluid
+applet.
+
+```
+web/
+├── js/cheney.js      ← Cheney 1993 law + Byram derived quantities
+├── js/levelset.js    ← 2D Godunov level-set front
+├── data/golden.json  ← generated; pins the JS to the Python reference
+└── test.html         ← cross-check page
+```
+
+Two modes are planned:
+
+- **Mode A — predictive.** Front geometry is real (level-set front
+  propagation, exact); the spread *rate* is the Cheney regression. Correct
+  across the whole slider range by construction, but the mechanism is a
+  black box. **This is what currently exists.**
+- **Mode C — mechanistic.** Per-cell energy budget with radiant and
+  convective preheat, an ignition threshold, and residence-time burnout, so
+  spread *emerges*. One coefficient calibrated at a reference condition.
+  Not yet built.
+
+The delta between the two is the teaching content.
+
+### Verifying the port
+
+The JS is a hand port, so it ships with golden vectors proving it still
+agrees with the research code:
+
+```bash
+.venv/bin/python scripts/gen_golden_vectors.py   # regenerate the vectors
+node web/test.mjs                                # CLI; exit code gates CI
+python3 -m http.server -d web 8000               # or open /test.html
+```
+
+Both runners call `runChecks()` in `web/js/selftest.js`, so they cannot
+drift. Current status: **10/10 pass** (node v18).
+
+The level-set cases must be **bit-exact** — their speed fields use only
+IEEE-exact operations, so any difference means the discretisation diverged.
+The Cheney and Byram cases allow 1e-12 relative: `cheney_eq6_ros_m_per_s()`
+multiplies by 60.0 and divides by 60.0 again, a no-op round-trip that costs
+up to 1 ulp, and `pow`/`exp` may differ by an ulp across libm builds.
 
 ## Attribution
 

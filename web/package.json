@@ -1,0 +1,10 @@
+{
+  "name": "cheney-web-frontend",
+  "private": true,
+  "type": "module",
+  "description": "Marks web/**/*.js as ES modules so `node web/test.mjs` can import them. Browsers ignore this file; they use <script type=\"module\"> instead. No dependencies and no build step by design.",
+  "scripts": {
+    "test": "node test.mjs",
+    "serve": "python3 -m http.server 8000"
+  }
+}

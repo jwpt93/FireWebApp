@@ -1,0 +1,4 @@
+{
+ "_comment": "Tier-3 gallery index. Populated by scripts/web_export/export_tier3_gallery.py after a 3D run; each entry points at an mp4/still in this directory.",
+ "items": []
+}

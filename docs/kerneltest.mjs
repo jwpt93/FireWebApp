@@ -11,6 +11,31 @@
  * single differing ulp means a transcription error — a swapped index, a
  * missing ghost, a `<` where the Python has `<=`.
  *
+ * THE CONTRACT (two different standards, deliberately):
+ *
+ * 1. BETWEEN CODES — a tolerance, not identical bits.  Bit-exactness across
+ *    languages is unattainable for any kernel touching pow() or exp(): IEEE
+ *    does not require those to be correctly rounded, and V8's libm disagrees
+ *    with glibc's by ~2 ulp (pow(1.743e-4, 0.25) is ...469729 in V8 against
+ *    ...469727 in glibc).  Chasing that is wasted effort.  The actual max
+ *    relative difference is REPORTED for every field so drift is visible, and
+ *    where bit-exactness does happen to hold it is called out — the stencil
+ *    kernels manage it because they use only + - * / sqrt, all correctly
+ *    rounded.
+ *
+ * 2. WITHIN THIS CODE — bit-exact, no exceptions.  Every kernel is run twice
+ *    on identical inputs and the two results must match to the last bit.
+ *    This is CLAUDE.md Rule #17 applied to the port: without it, a validation
+ *    result is noise, and we could not tell a physics change from a
+ *    scheduling roll.  It is also the property that makes the tolerance in
+ *    (1) meaningful — a reproducible port that sits a few ulp from the
+ *    reference is a different thing from one that wanders.
+ *
+ * A caveat worth stating: EDC's extinction gates are DISCONTINUOUS, so a
+ * 1-ulp difference in omega can cross a `< 0.5` threshold and move a cell's
+ * T_g by degrees.  The browser solver is therefore a valid solution of the
+ * same model, not a bit-identical replay of the Python trajectory.
+ *
  * Exits non-zero on any failure.
  */
 import { readFileSync } from 'node:fs';
@@ -23,6 +48,7 @@ import { stepTentativeVelocity } from './js/physics/momentum.js';
 import { stepDragForce } from './js/physics/drag.js';
 import { stepSolidConductionVertical } from './js/physics/solidConduction.js';
 import { stepGasSolidCoupling } from './js/physics/coupling.js';
+import { stepChemistryOdeEdc } from './js/physics/edc.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -34,6 +60,58 @@ const check = (name, ok, detail) => results.push({ name, ok, detail });
 function firstDiff(got, ref) {
   for (let i = 0; i < ref.length; i++) if (got[i] !== ref[i]) return i;
   return -1;
+}
+
+/** Largest relative difference (absolute where the reference is zero). */
+function maxRel(got, ref) {
+  let worst = 0, at = -1;
+  for (let i = 0; i < ref.length; i++) {
+    const d = ref[i] === 0 ? Math.abs(got[i])
+                           : Math.abs(got[i] - ref[i]) / Math.abs(ref[i]);
+    if (d > worst) { worst = d; at = i; }
+  }
+  return { worst, at };
+}
+
+/** Default cross-language tolerance. Tight enough to catch a real bug, loose
+ *  enough not to trip on libm. */
+const XLANG_TOL = 1e-9;
+
+/**
+ * Compare named field triples [name, got, ref] against the tolerance, and
+ * report whether any of them additionally came out bit-exact -- that is free
+ * information about how clean the port is, worth surfacing even though it is
+ * no longer required.
+ */
+function compareFields(label, fields, tol = XLANG_TOL, extra = '') {
+  const rows = fields.map(([nm, got, ref]) => {
+    const { worst, at } = maxRel(got, ref);
+    return { nm, worst, at, got, ref, exact: firstDiff(got, ref) < 0 };
+  });
+  const over = rows.filter((r) => r.worst > (typeof tol === 'object' ? tol[r.nm] : tol));
+  const allExact = rows.every((r) => r.exact);
+  const summary = allExact
+    ? `bit-exact (${rows.length} fields)`
+    : rows.map((r) => `${r.nm} ${r.worst.toExponential(1)}`).join(', ');
+  check(label, over.length === 0,
+        over.length === 0
+          ? `${summary}${extra ? ' — ' + extra : ''}`
+          : over.map((r) => `${r.nm} rel ${r.worst.toExponential(2)} at ${r.at}: ` +
+              `got ${r.got[r.at]} ref ${r.ref[r.at]}`).join('; '));
+}
+
+/**
+ * Rule #17 within the port: run `fn` twice on freshly-built inputs and demand
+ * the two results match bit for bit.
+ */
+function checkDeterminism(label, fn) {
+  const a = fn();
+  const b = fn();
+  const bad = a.map((arr, i) => firstDiff(arr, b[i])).filter((x) => x >= 0);
+  check(`determinism.${label}`, bad.length === 0,
+        bad.length === 0
+          ? `two runs bit-identical (${a.length} output fields)`
+          : `${bad.length} field(s) differ between runs`);
 }
 
 // ── scalar helpers ─────────────────────────────────────────────────────────
@@ -174,6 +252,122 @@ for (const c of G.coupling.cases) {
             `(${c.n_dried} cells fully dried — evap cap binds)`
           : bad.map(([nm, at, got, ref]) =>
               `${nm} at ${at}: got ${got[at]} ref ${ref[at]}`).join('; '));
+}
+
+// ── step_chemistry_ode_edc ─────────────────────────────────────────────────
+for (const c of G.edc.cases) {
+  const f = (a) => Float64Array.from(a);
+  const Tg = f(c.T_g_in), Yf = f(c.Y_fuel_in), YO2 = f(c.Y_O2_in);
+  const om = new Float64Array(c.omega_out.length);
+  stepChemistryOdeEdc(
+    f(c.rho), Tg, Yf, YO2, f(c.k_turb), f(c.eps_turb), c.chi_rad, c.cp_g,
+    c.dt, c.n_substeps, om, f(c.Y_H2O),
+    { extinctionEnable: c.extinction_enable, sStoich: c.s_stoich, hocJ: c.hoc_J },
+  );
+  // NOT bit-exact, and deliberately so -- see the note at the top of this
+  // file.  EDC uses pow() and exp(), which IEEE does not require to be
+  // correctly rounded, and V8's libm differs from glibc's by ~2 ulp.  The
+  // stencil kernels avoid this by using only + - * / sqrt.
+  //
+  // Tolerances differ per field because the amplification is not uniform:
+  // omega and the mass fractions track the ulp error directly, while T_g
+  // additionally inherits THRESHOLD FLIPS -- a 1-ulp omega can cross the
+  // `< 0.5` gate gating the wet-bulb cascade, which is worth ~2.3 K per
+  // substep.  That is a property of the model's discontinuous extinction
+  // gates, not of the port.
+  const TOL = { omega: 1e-9, Y_fuel: 1e-9, Y_O2: 1e-9, T_g: 1e-2 };
+  const bad = [['T_g', Tg, c.T_g_out], ['Y_fuel', Yf, c.Y_fuel_out],
+               ['Y_O2', YO2, c.Y_O2_out], ['omega', om, c.omega_out]]
+    .map(([nm, got, ref]) => {
+      let worst = 0, at = -1;
+      for (let i = 0; i < ref.length; i++) {
+        const d = ref[i] === 0 ? Math.abs(got[i])
+                               : Math.abs(got[i] - ref[i]) / Math.abs(ref[i]);
+        if (d > worst) { worst = d; at = i; }
+      }
+      return [nm, worst, at, got, ref];
+    });
+  const over = bad.filter(([nm, worst]) => worst > TOL[nm]);
+  const worstAll = bad.map(([nm, w]) => `${nm} ${w.toExponential(1)}`).join(', ');
+  check(`edc.chemistry.${c.name}`, over.length === 0,
+        over.length === 0
+          ? `${c.nz}x${c.ny}x${c.nx}, max rel. diff — ${worstAll} ` +
+            `(${c.n_quenched} quenched, ${c.n_below_Tign} below T_ign)`
+          : over.map(([nm, w, at, got, ref]) =>
+              `${nm} rel ${w.toExponential(2)} > ${TOL[nm]} at ${at}: ` +
+              `got ${got[at]} ref ${ref[at]}`).join('; '));
+}
+
+// ── Rule #17 within the port: every kernel, twice, bit-identical ──────────
+{
+  const f = (a) => Float64Array.from(a);
+  const m = G.muscl.cases[0];
+  checkDeterminism('muscl.advect', () => {
+    const rhs = f(m.rhs_in);
+    advect3dScalarMuscl(f(m.phi), f(m.u), f(m.v), f(m.w), m.dx, m.dy,
+      f(m.d_face_above), f(m.d_face_below), rhs, m.phi_inlet,
+      { nx: m.nx, ny: m.ny, nz: m.nz });
+    return [rhs];
+  });
+
+  const sp = G.species.cases[0];
+  checkDeterminism('species.transport', () => {
+    const Y = f(sp.Y_in);
+    stepSpeciesTransport(Y, f(sp.rho), f(sp.u), f(sp.v), f(sp.w), f(sp.S),
+      sp.dt, sp.dx, sp.dy, f(sp.dz_arr), f(sp.d_face_above),
+      f(sp.d_face_below), sp.D, sp.Y_inlet,
+      { nx: sp.nx, ny: sp.ny, nz: sp.nz });
+    return [Y];
+  });
+
+  const mo = G.momentum.cases[0];
+  checkDeterminism('momentum.tentative', () => {
+    const u = f(mo.u_in), v = f(mo.v_in), w = f(mo.w_in);
+    stepTentativeVelocity(u, v, w, f(mo.rho), f(mo.T_g), f(mo.Fx), f(mo.Fy),
+      f(mo.Fz), mo.dt, mo.dx, mo.dy, f(mo.dz_arr), f(mo.d_face_above),
+      f(mo.d_face_below), mo.T_amb, f(mo.u_inlet), f(mo.v_inlet),
+      f(mo.w_inlet), { nx: mo.nx, ny: mo.ny, nz: mo.nz });
+    return [u, v, w];
+  });
+
+  const dr = G.drag.cases[0];
+  checkDeterminism('drag.force', () => {
+    const n = dr.nz * dr.ny * dr.nx;
+    const Fx = new Float64Array(n), Fy = new Float64Array(n), Fz = new Float64Array(n);
+    stepDragForce(f(dr.u), f(dr.v), f(dr.w), f(dr.rho), f(dr.alpha_s),
+      dr.sigma_sav, Fx, Fy, Fz, dr.C_D);
+    return [Fx, Fy, Fz];
+  });
+
+  const sc = G.solid_conduction.cases[0];
+  checkDeterminism('solidConduction', () => {
+    const Ts = f(sc.T_s_in);
+    stepSolidConductionVertical(Ts, f(sc.alpha_s), f(sc.dz_arr),
+      f(sc.d_face_above), f(sc.d_face_below), sc.k_solid, sc.rho_solid,
+      sc.cp_solid, sc.dt, { nx: sc.nx, ny: sc.ny, nz: sc.nz });
+    return [Ts];
+  });
+
+  const co = G.coupling.cases[0];
+  checkDeterminism('coupling.gasSolid', () => {
+    const Tg = f(co.T_g_in), Ts = f(co.T_s_in), mw = f(co.m_water_in);
+    stepGasSolidCoupling(Tg, Ts, f(co.rho), f(co.u), f(co.v), f(co.w),
+      f(co.alpha_s), co.sigma_sav, f(co.q_rad_in), f(co.Q_pyro), f(co.Q_comb),
+      mw, co.L_v, co.dt, f(co.dz_arr), co.T_amb,
+      { nx: co.nx, ny: co.ny, nz: co.nz });
+    return [Tg, Ts, mw];
+  });
+
+  const ed = G.edc.cases[0];
+  checkDeterminism('edc.chemistry', () => {
+    const Tg = f(ed.T_g_in), Yf = f(ed.Y_fuel_in), YO2 = f(ed.Y_O2_in);
+    const om = new Float64Array(ed.omega_out.length);
+    stepChemistryOdeEdc(f(ed.rho), Tg, Yf, YO2, f(ed.k_turb), f(ed.eps_turb),
+      ed.chi_rad, ed.cp_g, ed.dt, ed.n_substeps, om, f(ed.Y_H2O),
+      { extinctionEnable: ed.extinction_enable, sStoich: ed.s_stoich,
+        hocJ: ed.hoc_J });
+    return [Tg, Yf, YO2, om];
+  });
 }
 
 // ── report ─────────────────────────────────────────────────────────────────

@@ -329,6 +329,60 @@ def vec_coupling():
     return {"cases": cases}
 
 
+def vec_edc():
+    """step_chemistry_ode_edc — Magnussen EDC with all three suppressions.
+
+    Two variants per shape so BOTH extinction paths are covered: gates off
+    (the production Cheney setting) and gates on.  Inputs are chosen so each
+    suppression actually fires somewhere -- a quench that never triggers, or
+    a cold-flame floor no cell falls below, would leave that branch untested.
+    """
+    from model_outdoor.physics_3d.chemistry_closures import edc
+
+    cases = []
+    for name, nz, ny, nx in SHAPES:
+        for ext in (False, True):
+            r = np.random.default_rng(8080 + int(ext))
+            shape = (nz, ny, nx)
+            rho = np.ascontiguousarray(0.3 + 0.9 * r.random(shape))
+            # T spanning the 1200 K ignition floor AND the 2400 K cap, so the
+            # cold-flame gate and the cap both fire.
+            T_g = np.ascontiguousarray(400.0 + 2200.0 * r.random(shape))
+            Y_f = np.ascontiguousarray(0.30 * r.random(shape))
+            Y_f[Y_f < 0.02] = 0.0           # some cells fuel-starved
+            Y_O2 = np.ascontiguousarray(0.05 + 0.18 * r.random(shape))
+            # Y_H2O straddling the 0.18 quench limit: some cells unaffected,
+            # some >50% suppressed (wet-bulb cascade), some fully quenched.
+            Y_H2O = np.ascontiguousarray(0.28 * r.random(shape))
+            k_t = np.ascontiguousarray(1e-5 + 2.0 * r.random(shape))
+            eps = np.ascontiguousarray(1e-7 + 3.0 * r.random(shape))
+            om = np.zeros(shape)
+            Tg_in, Yf_in, YO2_in = T_g.copy(), Y_f.copy(), Y_O2.copy()
+            edc.step_chemistry_ode_edc(
+                rho, T_g, Y_f, Y_O2, k_t, eps, 0.34, 1100.0, 2.0e-3, 3,
+                om, Y_H2O, ext, 1.3, 17_000_000.0)
+            cases.append({
+                "name": f"{name}_ext{int(ext)}", "nz": nz, "ny": ny, "nx": nx,
+                "extinction_enable": ext, "chi_rad": 0.34, "cp_g": 1100.0,
+                "dt": 2.0e-3, "n_substeps": 3,
+                "s_stoich": 1.3, "hoc_J": 17_000_000.0,
+                "rho": rho.ravel().tolist(),
+                "T_g_in": Tg_in.ravel().tolist(),
+                "Y_fuel_in": Yf_in.ravel().tolist(),
+                "Y_O2_in": YO2_in.ravel().tolist(),
+                "k_turb": k_t.ravel().tolist(), "eps_turb": eps.ravel().tolist(),
+                "Y_H2O": Y_H2O.ravel().tolist(),
+                "T_g_out": T_g.ravel().tolist(),
+                "Y_fuel_out": Y_f.ravel().tolist(),
+                "Y_O2_out": Y_O2.ravel().tolist(),
+                "omega_out": om.ravel().tolist(),
+                "n_quenched": int((Y_H2O >= 0.18).sum()),
+                "n_below_Tign": int((Tg_in < 1200.0).sum()),
+                "n_capped": int((T_g >= 2400.0).sum()),
+            })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -346,6 +400,7 @@ def main() -> None:
         "drag": vec_drag(),
         "solid_conduction": vec_solid_conduction(),
         "coupling": vec_coupling(),
+        "edc": vec_edc(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -353,6 +408,9 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["edc"]["cases"]:
+        print(f"  edc:     {c['name']:14s} {c['n_quenched']:3d} fully quenched, "
+              f"{c['n_below_Tign']:3d} below T_ign, {c['n_capped']:3d} T-capped")
     for c in payload["drag"]["cases"]:
         print(f"  drag:    {c['name']:8s} {c['n_nofuel']} no-fuel cells (early-return branch)")
     for c in payload["coupling"]["cases"]:

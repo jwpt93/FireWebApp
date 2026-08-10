@@ -325,6 +325,19 @@ BC (10 unit tests), level-set FSD closure, and 3D flame-front forcing.
 
 ## Applet — verification and future work
 
+### Running the real solver in the browser
+
+A port of `unitiedmodel2`'s actual 3D solver to JS is under way — see
+**[SOLVER_PORT.md](SOLVER_PORT.md)** for the full state: what is done, what
+remains, the measured performance chain (29× so far), the verification
+contract, and the porting gotchas. 1,551 of ~6,000 lines, all verified against
+the Python.
+
+That document also records several findings that belong to `unitiedmodel2`
+rather than to this repo — a flag leaking across cells in `edc.py`, an
+`n_z_bed` kwarg that is silently ignored, and evidence that `N_SUB = 10` is
+unnecessary.
+
 ### Future work — exploit the steady state instead of re-solving it
 
 Once wind, moisture and fuel stop changing, the applet is solving the same

@@ -59,6 +59,11 @@ import {
   aggregateParticlesToMLocalGrid, stepHorizontalSolidConductionScatter,
 } from './js/physics/lagrangianBed.js';
 import { ProjectionSolver3D } from './js/physics/projection.js';
+import {
+  LevelSetFront3D, godunovGradNorm, reinitGodunovGrad, flameTiltBandM,
+  computeQInAtFront3d, computeVn3d, computePhiFlameFromState,
+  flameBodyMaskFromPhiFlame, updateCellAge,
+} from './js/physics/flameFront.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -378,6 +383,106 @@ for (const c of G.dom.cases) {
     XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, S4/24 ordinates, source-iterated`);
 }
 
+// ── Level-set front + flame geometry ──────────────────────────────────────
+for (const c of G.flame_front.cases) {
+  const f = (a) => Float64Array.from(a);
+  const u8 = (a) => Uint8Array.from(a);
+  // null round-trips through JSON as the marker for +inf, which JSON cannot
+  // carry. Only cell_age uses it.
+  const fInf = (a) => Float64Array.from(a, (v) => (v === null ? Infinity : v));
+  const shape = { nx: c.nx, ny: c.ny, nz: c.nz };
+  const n = c.nz * c.ny * c.nx;
+
+  // Albini flame tilt, across a wind sweep including the U=0 degenerate case.
+  {
+    let bad = 0, worst = 0;
+    for (const [u, want] of c.tilt_probe) {
+      const got = flameTiltBandM(u);
+      const d = want === 0 ? Math.abs(got) : Math.abs(got - want) / Math.abs(want);
+      if (d > worst) worst = d;
+      if (d > XLANG_TOL) bad++;
+    }
+    check(`flameFront.tiltBand.${c.name}`, bad === 0,
+      `${c.tilt_probe.length} wind probes, max rel ${worst.toExponential(1)}`);
+  }
+
+  // Source-patch initialisation, then the two Godunov gradients.
+  const lset = new LevelSetFront3D({
+    nz: c.nz, ny: c.ny, nx: c.nx, dx: c.dx, dy: c.dy, dzArr: f(c.dz_arr),
+  });
+  lset.initializeSourcePatch(1, 4, c.n_z_bed - 1, f(c.x_mid));
+  compareFields(`flameFront.initPatch.${c.name}`,
+    [['phi', lset.phi, c.phi_init]], XLANG_TOL, 'signed distance to patch edge');
+
+  const grad = new Float64Array(n);
+  godunovGradNorm(lset.phi, c.dx, c.dy, f(c.dz_arr), grad, shape);
+  compareFields(`flameFront.godunov.${c.name}`,
+    [['grad', grad, c.grad_out]], XLANG_TOL, 'upwind |grad phi|, v_n > 0');
+
+  const gradR = new Float64Array(n);
+  reinitGodunovGrad(f(c.phi_dist), f(c.phi_init), c.dx, c.dy, f(c.dz_arr),
+                    gradR, shape);
+  compareFields(`flameFront.reinitGrad.${c.name}`,
+    [['grad', gradR, c.grad_reinit]], XLANG_TOL, 'sign-aware, both branches');
+
+  // Evolve then reinit -- the full per-step level-set update.
+  lset.evolve(c.dt, f(c.v_n_in));
+  compareFields(`flameFront.evolve.${c.name}`,
+    [['phi', lset.phi, c.phi_evolved]], XLANG_TOL, 'z-varying v_n');
+  lset.reinitialize();
+  compareFields(`flameFront.reinit.${c.name}`,
+    [['phi', lset.phi, c.phi_reinit]], XLANG_TOL,
+    `${5} Sussman substeps`);
+
+  // Masks and front position.
+  const ahead = lset.aheadBandMask(c.band_m);
+  for (let k = c.n_z_bed; k < c.nz; k++) {
+    ahead.fill(0, k * c.ny * c.nx, (k + 1) * c.ny * c.nx);   // bed-only
+  }
+  compareFields(`flameFront.masks.${c.name}`,
+    [['ahead', ahead, c.ahead_mask],
+     ['flame_body', lset.flameBodyMask(), c.flame_body_mask],
+     ['burned', lset.burnedMask(), c.burned_mask]],
+    XLANG_TOL, `${c.n_ahead} cells in the ahead-band`);
+  {
+    const got = lset.frontX(1, Math.floor(c.ny / 2));
+    const want = c.front_x;
+    const ok = want === null ? !Number.isFinite(got)
+      : Math.abs(got - want) / Math.abs(want) <= XLANG_TOL;
+    check(`flameFront.frontX.${c.name}`, ok, `x = ${got}`);
+  }
+
+  // phi_flame: the exact separable EDT against scipy's exact EDT.
+  const phiFlame = computePhiFlameFromState(
+    f(c.omega), f(c.T_g), f(c.Y_fuel), c.dx, c.dy, f(c.dz_arr), shape);
+  compareFields(`flameFront.phiFlame.${c.name}`,
+    [['phi_flame', phiFlame, c.phi_flame],
+     ['body_mask', flameBodyMaskFromPhiFlame(phiFlame, 0.0), c.fb_from_phi]],
+    XLANG_TOL,
+    `exact EDT vs scipy, ${c.n_active} active cells (reaction + plume tail)`);
+
+  // Forward flux into the band, and the v_n it drives, dry and wet.
+  const qIn = computeQInAtFront3d(new Float64Array(n), f(c.q_dom_fwd),
+                                  ahead, f(c.q_burst), shape);
+  const vnDry = computeVn3d(qIn, 1.07, 1850.0, 0.25, 600.0, 300.0, null);
+  const vnWet = computeVn3d(qIn, 1.07, 1850.0, 0.25, 600.0, 300.0, f(c.M_local));
+  compareFields(`flameFront.vn.${c.name}`,
+    [['q_in', qIn, c.q_in], ['v_n_dry', vnDry, c.v_n_dry],
+     ['v_n_wet', vnWet, c.v_n_wet]],
+    XLANG_TOL, 'latent term dominates at M >= 0.1');
+
+  // cell_age across ignite / continue / reset in one call.
+  const age = fInf(c.cell_age_in);
+  updateCellAge(age, u8(c.flame_body_mask), c.dt);
+  const wantAge = fInf(c.cell_age_out);
+  let bad = 0;
+  for (let i = 0; i < n; i++) {
+    if (!(age[i] === wantAge[i] || (!Number.isFinite(age[i]) && !Number.isFinite(wantAge[i])))) bad++;
+  }
+  check(`flameFront.cellAge.${c.name}`, bad === 0,
+    bad === 0 ? 'ignite / continue / reset all bit-exact' : `${bad} cells differ`);
+}
+
 // ── Pressure projection ───────────────────────────────────────────────────
 // Three checks at two different standards -- see vec_projection() for why the
 // projection result is judged on residual rather than elementwise.
@@ -658,6 +763,22 @@ for (const c of G.lagrangian_bed.cases) {
         hocJ: ed.hoc_J });
     return [Tg, Yf, YO2, om];
   });
+
+  const ls = G.flame_front.cases[0];
+  checkDeterminism('flameFront.evolveReinit', () => {
+    const lset = new LevelSetFront3D({
+      nz: ls.nz, ny: ls.ny, nx: ls.nx, dx: ls.dx, dy: ls.dy,
+      dzArr: f(ls.dz_arr),
+    });
+    lset.initializeSourcePatch(1, 4, ls.n_z_bed - 1, f(ls.x_mid));
+    lset.evolve(ls.dt, f(ls.v_n_in));
+    lset.reinitialize();
+    return [lset.phi.slice()];
+  });
+  checkDeterminism('flameFront.phiFlame', () => [
+    computePhiFlameFromState(f(ls.omega), f(ls.T_g), f(ls.Y_fuel),
+      ls.dx, ls.dy, f(ls.dz_arr), { nx: ls.nx, ny: ls.ny, nz: ls.nz }),
+  ]);
 
   const pj = G.projection.cases[0];
   checkDeterminism('projection.project', () => {

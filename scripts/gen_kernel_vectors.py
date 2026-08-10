@@ -33,6 +33,7 @@ Run:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -853,6 +854,132 @@ def vec_projection():
     return {"cases": cases}
 
 
+def vec_flame_front():
+    """Level-set front, flame geometry, and the v_n driver.
+
+    The awkward one here is `compute_phi_flame_from_state`, which calls
+    scipy.ndimage.distance_transform_edt. The port carries its own exact
+    separable EDT (Felzenszwalb & Huttenlocher 2012) rather than an
+    approximation, so the two should agree to floating point — that is worth
+    checking hard, since a chamfer-style approximation would look plausible
+    and be quietly several percent wrong everywhere.
+
+    The active-flame field is built to exercise BOTH clauses of the criterion:
+    a reacting core (omega above threshold) and a separate hot fuel-bearing
+    plume tail (omega below threshold, T_g and Y_F above theirs). If only one
+    fired, half the criterion would be untested.
+    """
+    from model_outdoor.physics_3d import flame_front_3d as ff
+
+    cases = []
+    for name, nz, ny, nx in SHAPES:
+        st = make_state(nz, ny, nx, seed=31415)
+        r = np.random.default_rng(2718)
+        dz = st["dz_arr"]
+        dx, dy = st["dx"], st["dy"]
+        n_z_bed = max(nz // 3, 1)
+        x_mid = (np.arange(nx) + 0.5) * dx
+
+        lset = ff.LevelSetFront3D(nz, ny, nx, dx, dy, dz)
+        lset.initialize_source_patch(1, 4, n_z_bed - 1, x_mid)
+        phi_init = lset.phi.copy()
+
+        # Godunov gradient on the freshly-initialised field.
+        grad = np.zeros((nz, ny, nx))
+        ff.godunov_grad_norm(lset.phi, dx, dy, dz, grad)
+        grad_out = grad.copy()
+
+        # Sign-aware reinit gradient, on a deliberately DISTORTED phi so the
+        # |grad| != 1 correction has something to do and both sign branches
+        # are visited.
+        phi_dist = np.ascontiguousarray(phi_init * (0.7 + 0.6 * r.random((nz, ny, nx))))
+        grad_r = np.zeros((nz, ny, nx))
+        ff.reinit_godunov_grad(phi_dist, phi_init, dx, dy, dz, grad_r)
+
+        # Evolve with a z-varying v_n, then reinit.
+        v_n = np.ascontiguousarray(
+            0.05 * (1.0 + 0.8 * r.random((nz, ny, nx)))
+            * np.linspace(1.0, 0.3, nz)[:, None, None])
+        lset.evolve(0.02, v_n)
+        phi_evolved = lset.phi.copy()
+        lset.reinitialize()
+        phi_reinit = lset.phi.copy()
+
+        band_m = ff.flame_tilt_band_m(5.0)
+        ahead = lset.ahead_band_mask(band_m=band_m)
+        ahead[n_z_bed:] = False       # bed-only, as the main loop does
+        flame_body = lset.flame_body_mask()
+        burned = lset.burned_mask()
+        front_x = lset.front_x(k=1, j=ny // 2)
+
+        # phi_flame: reacting core plus a detached hot plume tail.
+        omega = np.zeros((nz, ny, nx))
+        omega[:n_z_bed, :, 2:5] = 5.0e-2
+        T_g = np.full((nz, ny, nx), 300.0)
+        Y_f = np.zeros((nz, ny, nx))
+        T_g[n_z_bed:n_z_bed + 2, :, 5:8] = 1400.0    # plume tail, no reaction
+        Y_f[n_z_bed:n_z_bed + 2, :, 5:8] = 0.02
+        phi_flame = ff.compute_phi_flame_from_state(omega, T_g, Y_f, dx, dy, dz)
+        fb_from_phi = ff.flame_body_mask_from_phi_flame(phi_flame, band_m=0.0)
+
+        # q_in + v_n, with and without the moisture term.
+        q_fr = np.zeros((nz, ny, nx))
+        q_dom = np.ascontiguousarray(3.0e4 * r.random((nz, ny, nx)))
+        q_burst = np.ascontiguousarray(1.0e4 * r.random((ny, nx)))
+        q_in = ff.compute_q_in_at_front_3d(q_fr, q_dom, ahead,
+                                           q_burst_conv_2d=q_burst)
+        M_local = np.ascontiguousarray(0.35 * r.random((nz, ny, nx)))
+        v_n_dry = ff.compute_v_n_3d(q_in, 1.07, 1850.0, 0.25, 600.0, 300.0,
+                                    M_local=None)
+        v_n_wet = ff.compute_v_n_3d(q_in, 1.07, 1850.0, 0.25, 600.0, 300.0,
+                                    M_local=M_local)
+
+        # cell_age across all three transitions in one call.
+        cell_age = np.full((nz, ny, nx), np.inf)
+        cell_age[flame_body] = 0.5           # some already burning
+        cell_age[:1] = np.inf                # some about to ignite
+        cell_age_in = cell_age.copy()
+        ff.update_cell_age(cell_age, flame_body, 0.02)
+
+        cases.append({
+            "name": name, "nz": nz, "ny": ny, "nx": nx,
+            "dx": dx, "dy": dy, "dz_arr": dz.tolist(),
+            "n_z_bed": n_z_bed, "dt": 0.02, "band_m": band_m,
+            "x_mid": x_mid.tolist(),
+            "tilt_probe": [[u, ff.flame_tilt_band_m(u)]
+                           for u in (0.0, 0.5, 1.0, 2.0, 4.0, 8.0, 20.0)],
+            "phi_init": phi_init.ravel().tolist(),
+            "grad_out": grad_out.ravel().tolist(),
+            "phi_dist": phi_dist.ravel().tolist(),
+            "grad_reinit": grad_r.ravel().tolist(),
+            "v_n_in": v_n.ravel().tolist(),
+            "phi_evolved": phi_evolved.ravel().tolist(),
+            "phi_reinit": phi_reinit.ravel().tolist(),
+            "ahead_mask": ahead.astype(np.uint8).ravel().tolist(),
+            "flame_body_mask": flame_body.astype(np.uint8).ravel().tolist(),
+            "burned_mask": burned.astype(np.uint8).ravel().tolist(),
+            "front_x": (front_x if math.isfinite(front_x) else None),
+            "omega": omega.ravel().tolist(),
+            "T_g": T_g.ravel().tolist(), "Y_fuel": Y_f.ravel().tolist(),
+            "phi_flame": phi_flame.ravel().tolist(),
+            "fb_from_phi": fb_from_phi.astype(np.uint8).ravel().tolist(),
+            "q_dom_fwd": q_dom.ravel().tolist(),
+            "q_burst": q_burst.ravel().tolist(),
+            "q_in": q_in.ravel().tolist(),
+            "M_local": M_local.ravel().tolist(),
+            "v_n_dry": v_n_dry.ravel().tolist(),
+            "v_n_wet": v_n_wet.ravel().tolist(),
+            "cell_age_in": [None if np.isinf(x) else x
+                            for x in cell_age_in.ravel().tolist()],
+            "cell_age_out": [None if np.isinf(x) else x
+                             for x in cell_age.ravel().tolist()],
+            "n_active": int(((omega > 1e-3) |
+                             ((T_g > 1000.0) & (Y_f > 1e-3))).sum()),
+            "n_ahead": int(ahead.sum()),
+        })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -877,6 +1004,7 @@ def main() -> None:
         "dom": vec_dom(),
         "lagrangian_bed": vec_lagrangian_bed(),
         "projection": vec_projection(),
+        "flame_front": vec_flame_front(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -884,6 +1012,10 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["flame_front"]["cases"]:
+        print(f"  lset:    {c['name']:8s} {c['n_active']} active-flame cells, "
+              f"{c['n_ahead']} in ahead-band, band={c['band_m']:.3f} m, "
+              f"front_x={c['front_x']}")
     for c in payload["projection"]["cases"]:
         print(f"  proj:    {c['name']:8s} {c['nz']}x{c['ny']}x{c['nx']}, "
               f"BiCGSTAB {c['n_iters']} iters, "

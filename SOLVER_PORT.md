@@ -88,7 +88,7 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `dom_3d` (DOM radiation) | 473 | **done** — ~1e-13 |
 | `lagrangian_bed_3d` | 1,070 | **done** — init/conduction bit-exact, step ~1e-15 |
 | `projection_3d` (fft_pcg path) | 450 of 948 | **done** — operator 1e-14, same residual |
-| `flame_front_3d` (level set + v_n) | ~500 of 835 | to do |
+| `flame_front_3d` (level set + v_n) | ~500 of 835 | **done** — bit-exact; own exact EDT |
 | `soil_3d` | 153 | to do |
 | `combustion_3d` (O2 supply only) | 66 of 251 | to do |
 | `momentum_3d.apply_outflow_sponge` | 30 | to do |
@@ -96,7 +96,7 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `spread_3d` BC + advection helpers | 130 | to do |
 | `spread_3d` main loop | ~800 | to do |
 
-**4,330 of ~6,100 done (71%).** 65/65 kernel checks pass.
+**4,830 of ~6,100 done (79%).** 89/89 kernel checks pass.
 
 ### The ~4,900 estimate was wrong — it is ~6,100
 

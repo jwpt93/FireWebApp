@@ -50,6 +50,7 @@ import { stepSolidConductionVertical } from './js/physics/solidConduction.js';
 import { stepGasSolidCoupling } from './js/physics/coupling.js';
 import { stepChemistryOdeEdc } from './js/physics/edc.js';
 import { SeparableLaplacian3D } from './js/physics/poisson.js';
+import { applyTurbulentDiffusion } from './js/physics/turbulentDiffusion.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -315,6 +316,17 @@ for (const c of G.poisson.cases) {
                 `${c.nz}x1x${c.nx}, own eigensolver (implicit QL) vs LAPACK`);
 }
 
+// ── apply_turbulent_diffusion ─────────────────────────────────────────────
+for (const c of G.turb_diff.cases) {
+  const f = (a) => Float64Array.from(a);
+  const fld = f(c.field_in);
+  applyTurbulentDiffusion(fld, f(c.nu_t), c.sc_t, c.dt, c.dx, c.dy,
+    f(c.dz_arr), f(c.d_face_above), f(c.d_face_below),
+    { nx: c.nx, ny: c.ny, nz: c.nz });
+  compareFields(`turbDiff.${c.name}`, [['field', fld, c.field_out]], XLANG_TOL,
+                `${c.nz}x${c.ny}x${c.nx}, ${c.n_sub} sub-steps`);
+}
+
 // ── Rule #17 within the port: every kernel, twice, bit-identical ──────────
 {
   const f = (a) => Float64Array.from(a);
@@ -373,6 +385,15 @@ for (const c of G.poisson.cases) {
       mw, co.L_v, co.dt, f(co.dz_arr), co.T_amb,
       { nx: co.nx, ny: co.ny, nz: co.nz });
     return [Tg, Ts, mw];
+  });
+
+  const td = G.turb_diff.cases[0];
+  checkDeterminism('turbDiff', () => {
+    const fld = f(td.field_in);
+    applyTurbulentDiffusion(fld, f(td.nu_t), td.sc_t, td.dt, td.dx, td.dy,
+      f(td.dz_arr), f(td.d_face_above), f(td.d_face_below),
+      { nx: td.nx, ny: td.ny, nz: td.nz });
+    return [fld];
   });
 
   const po = G.poisson.cases[0];

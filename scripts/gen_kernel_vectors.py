@@ -420,6 +420,47 @@ def vec_poisson():
     return {"cases": cases}
 
 
+def vec_turb_diff():
+    """apply_turbulent_diffusion — species and gas-energy diffusion.
+
+    nu_t is scaled so the kernel actually SUB-STEPS (n_sub > 1); with a small
+    nu_t it would take one pass and the sub-cycling logic would go untested.
+    """
+    from model_outdoor.physics_3d import turbulence_3d
+
+    cases = []
+    for name, nz, ny, nx in SHAPES:
+        for sc_t, tag in ((0.7, "sc"), (0.85, "pr")):
+            st = make_state(nz, ny, nx, seed=515)
+            r = np.random.default_rng(21)
+            # Big enough that Fo forces several sub-steps on the thin bed cells.
+            nu_t = np.ascontiguousarray(1e-4 + 0.05 * r.random((nz, ny, nx)))
+            fld = np.ascontiguousarray(st["phi"].copy())
+            fld_in = fld.copy()
+            turbulence_3d.apply_turbulent_diffusion(
+                fld, nu_t, sc_t, 2.0e-2, st["dx"], st["dy"],
+                st["dz_arr"], st["d_face_above"], st["d_face_below"])
+            # How many sub-steps did it take?  Recomputed here so the vector
+            # records whether the sub-cycling path was exercised at all.
+            import math as _m
+            dz_min = float(np.min(st["dz_arr"]))
+            h2 = min(st["dx"]**2, min(st["dy"]**2, dz_min**2))
+            Dt = float(nu_t[1:nz-1, :, 1:nx-1].max())/sc_t
+            n_sub = max(1, int(_m.ceil(2.0e-2 / (0.4*h2/Dt))))
+            cases.append({
+                "name": f"{name}_{tag}", "nz": nz, "ny": ny, "nx": nx,
+                "sc_t": sc_t, "dt": 2.0e-2, "dx": st["dx"], "dy": st["dy"],
+                "field_in": fld_in.ravel().tolist(),
+                "nu_t": nu_t.ravel().tolist(),
+                "dz_arr": st["dz_arr"].tolist(),
+                "d_face_above": st["d_face_above"].tolist(),
+                "d_face_below": st["d_face_below"].tolist(),
+                "field_out": fld.ravel().tolist(),
+                "n_sub": n_sub,
+            })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -439,6 +480,7 @@ def main() -> None:
         "coupling": vec_coupling(),
         "edc": vec_edc(),
         "poisson": vec_poisson(),
+        "turb_diff": vec_turb_diff(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -446,6 +488,8 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["turb_diff"]["cases"]:
+        print(f"  turbdiff:{c['name']:12s} sc_t={c['sc_t']}, n_sub={c['n_sub']}")
     for c in payload["poisson"]["cases"]:
         import math as _m
         pk = max(abs(v) for v in c["p_out"])

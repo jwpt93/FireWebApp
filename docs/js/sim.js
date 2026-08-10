@@ -42,7 +42,10 @@ export class FireSim {
       windDirDeg: 0,
       shape: 'windProjected',
       ignition: 'point',
+      model: 'hybrid',        // 'hybrid' (resolved + fit) or 'cheney' (fit only)
     };
+    /** Set by the app once docs/data/resolved.json has loaded. */
+    this.resolved = null;
     this.reset();
   }
 
@@ -50,9 +53,34 @@ export class FireSim {
     return FUELS[this.params.fuelKey];
   }
 
-  /** Head-fire rate of spread [m/s] — the Cheney regression. */
-  get headRos_m_s() {
+  /** Head-fire rate of spread [m/s] from the Cheney regression alone. */
+  get cheneyRos_m_s() {
     return rosFromU2(this.params.U2_m_s, this.params.moistureFrac, this.fuel.a_ch);
+  }
+
+  /**
+   * Head-fire rate of spread [m/s] actually propagated.
+   *
+   * In 'hybrid' mode this is the parent project's validated Phase 20
+   * Option B blend: the Cheney regression below U_10 = 2.5, the resolved 3D
+   * solver at or above 3.5, a linear ramp between. Falls back to the
+   * regression if the resolved table has not loaded yet, so a slow fetch
+   * degrades to Mode A rather than to a stalled fire.
+   */
+  get headRos_m_s() {
+    const { model, U2_m_s, moistureFrac, fuelKey } = this.params;
+    if (model === 'hybrid' && this.resolved) {
+      const U10 = U2_m_s / U2_PER_U10;
+      const r = this.resolved.hybridRos(fuelKey, moistureFrac, U10, this.fuel.a_ch);
+      if (Number.isFinite(r)) return r;
+    }
+    return this.cheneyRos_m_s;
+  }
+
+  /** Which side of the blend the current wind sits on, or null in fit mode. */
+  get regime() {
+    if (this.params.model !== 'hybrid' || !this.resolved) return null;
+    return this.resolved.regime(this.params.U2_m_s);
   }
 
   /** Byram fireline intensity [kW/m] at the head. */
@@ -97,8 +125,20 @@ export class FireSim {
   speedFn() {
     const { U2_m_s, moistureFrac, windDirDeg, shape } = this.params;
     const a = this.fuel.a_ch;
-    if (shape === 'isotropic') return isotropicSpeed(rosFromU2(U2_m_s, moistureFrac, a));
-    return windProjectedSpeed(U2_m_s, moistureFrac, a, (windDirDeg * Math.PI) / 180);
+    const head = this.headRos_m_s;
+    if (shape === 'isotropic') return isotropicSpeed(head);
+
+    // windProjectedSpeed is built on the Cheney law, so in hybrid mode scale
+    // its whole directional profile by the hybrid/Cheney ratio. That keeps
+    // the head at exactly headRos_m_s while preserving the shape model --
+    // rather than letting the map and the readouts disagree.
+    const base = windProjectedSpeed(U2_m_s, moistureFrac, a,
+                                    (windDirDeg * Math.PI) / 180);
+    const cheney = this.cheneyRos_m_s;
+    if (!(cheney > 0)) return base;
+    const k = head / cheney;
+    if (Math.abs(k - 1) < 1e-12) return base;
+    return (nx, ny) => k * base(nx, ny);
   }
 
   /** Clear the burn and re-seed the ignition. */

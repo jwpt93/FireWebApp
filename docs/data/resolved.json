@@ -1,0 +1,65 @@
+{
+ "_meta": {
+  "purpose": "Resolved 3D-solver ROS as a correction ratio to the Cheney regression, for the applet's hybrid mode.",
+  "blend": {
+   "model": "phase20_option_b",
+   "u_threshold_U10_m_s": 3.5,
+   "blend_width_m_s": 1.0,
+   "rule": "w_emp = 1 below (threshold-width); linear ramp; 0 at or above threshold"
+  },
+  "stored": "ratio = ROS_resolved / ROS_cheney_eq6, indexed by [U_10 m/s, ratio]; reconstruct as ratio x Cheney",
+  "wind_convention": "U_10. The applet slider is U_2; convert with U_10 = U_2 / 0.723 before querying.",
+  "provenance": "unitiedmodel2 local/diagnostics: cheney_phase19_sweep + phase20_blend_optB. ROS_Ts_m_min (level-set front tracker).",
+  "limits": "Moisture sampled at 4% and 8% only; anything outside is extrapolation. Wind coverage is thin for Nat8/Cut4/Cut8 (two points each). The applet interpolates the solver's ANSWERS -- it does not run the solver."
+ },
+ "table": {
+  "Cut4": [
+   [
+    4.0,
+    0.6567002142954954
+   ],
+   [
+    8.0,
+    0.6044872563878635
+   ]
+  ],
+  "Cut8": [
+   [
+    4.0,
+    0.7906453448166524
+   ],
+   [
+    8.0,
+    0.7104535733029382
+   ]
+  ],
+  "Nat4": [
+   [
+    3.5,
+    0.5778707054326264
+   ],
+   [
+    4.0,
+    0.677497703599034
+   ],
+   [
+    5.0,
+    0.8186886547552901
+   ],
+   [
+    8.0,
+    0.8328902405240127
+   ]
+  ],
+  "Nat8": [
+   [
+    4.0,
+    0.8224217012136372
+   ],
+   [
+    8.0,
+    0.9352924790818496
+   ]
+  ]
+ }
+}

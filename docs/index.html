@@ -119,6 +119,12 @@
     border-radius: .4rem; background: var(--surface-0);
   }
   .caption { font-size: .78rem; color: var(--text-2); margin: .5rem 0 0; }
+  .regime { font-size: .74rem; margin: .45rem 0 0; color: var(--text-2); line-height: 1.4; }
+  .regime b { color: var(--text-1); }
+  .regime .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: .35rem; vertical-align: 1px; }
+  .regime .r-fit      { background: var(--live); }
+  .regime .r-blend    { background: var(--text-3); }
+  .regime .r-resolved { background: var(--accent); }
   .legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .74rem; color: var(--text-2); margin-top: .5rem; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .3rem; vertical-align: -1px; }
   .legend .ref  { background: var(--accent); border-radius: 0; height: 2px; width: 16px; vertical-align: 3px; }
@@ -214,6 +220,15 @@
       </div>
 
       <div class="ctl">
+        <span class="grouplabel">Spread model</span>
+        <div class="seg">
+          <label><input type="radio" name="model" value="hybrid" checked><span>Hybrid</span></label>
+          <label><input type="radio" name="model" value="cheney"><span>Fit only</span></label>
+        </div>
+        <p class="regime" id="regime">—</p>
+      </div>
+
+      <div class="ctl">
         <span class="grouplabel">Fuel type</span>
         <div class="seg">
           <label><input type="radio" name="fuel" value="natural" checked><span id="fuel-natural-label">Natural</span></label>
@@ -255,6 +270,8 @@
         <tr><th>Flame depth</th><td><span id="out-flamed">—</span><span class="u">m</span></td></tr>
         <tr class="sep"><th>Fuel load</th><td><span id="out-load">—</span><span class="u">kg/m²</span></td></tr>
         <tr><th>Residence time</th><td><span id="out-residence">—</span><span class="u">s</span></td></tr>
+        <tr class="sep"><th>Cheney Eq. 6 rate</th><td><span id="out-cheney">—</span><span class="u">m/min</span></td></tr>
+        <tr><th>Solver correction</th><td><span id="out-corr">—</span><span class="u">×</span></td></tr>
         <tr class="sep"><th>Burnt area</th><td><span id="out-area">—</span><span class="u">ha</span></td></tr>
         <tr><th>Perimeter</th><td><span id="out-perimeter">—</span><span class="u">m</span></td></tr>
       </table>
@@ -283,6 +300,31 @@
     component along the front normal — no new constants, but it extends the
     law to directions it was never fitted against. <code>Isotropic</code> is
     the assumption-free baseline and is visibly wrong in wind.
+  </p>
+  <p>
+    <strong>Two spread models.</strong> <code>Hybrid</code> is the parent
+    project's validated Phase 20 “Option B” blend: below U₂ ≈ 1.8 m/s the rate
+    is Cheney's regression, above U₂ ≈ 2.5 it is a full 3D solver (k-ε RANS +
+    EDC combustion + DOM radiation + level-set front), with a linear ramp
+    between. That threshold is not a tuning knob — it is where the resolved
+    closure stops propagating correctly, because low-wind spread is mediated
+    by intermittent flame contact that a RANS average removes (Cheney 1998
+    §3.2; Finney 2015, PNAS 112:9833). Phase 19 put the threshold at 1.4 m/s
+    and left a hole: natural grass at 4% moisture and U₁₀ = 2 resolved to
+    6.56 m/min against Cheney's 26.42. Option B raises it above that hole and
+    scores 19/20 on the project's [⅓, 3] acceptance band.
+    <code>Fit only</code> disables the solver side, so you can see what it
+    contributes.
+  </p>
+  <p>
+    <strong>The solver is not running here.</strong> One case takes ten
+    minutes to an hour, so the applet carries precomputed results and
+    interpolates them — the solver's answers, faithfully, not the solver. They
+    are stored as a correction ratio to Cheney (0.58–0.94 across the sweep)
+    rather than as rates, because a near-flat ratio interpolates safely off a
+    few samples where a steep power law does not. The solver was run at 4% and
+    8% moisture only, so between those it interpolates and outside them it
+    holds the nearest value rather than extrapolating a two-point trend.
   </p>
   <p>
     <strong>The side view is derived, not drawn.</strong> Flame length is

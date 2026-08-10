@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from model_outdoor.empirical_ros import (  # noqa: E402
     CHENEY_EQ6_U2_RATIO,
+    blend_resolved_empirical,
     cheney_eq6_ros_m_per_s,
 )
 
@@ -273,6 +274,24 @@ def fig8_for_web() -> dict:
     return out
 
 
+def blend_vectors() -> dict:
+    """blend_resolved_empirical — the weight on the empirical side.
+
+    Probed densely across and beyond the Option B window (threshold 3.5,
+    width 1.0), including the exact boundaries where the branch conditions
+    flip: at u_lo the weight must still be 1.0, at the threshold exactly 0.0.
+    Also covers width = 0 (hard step) and a wind above threshold, so every
+    branch of the function is represented.
+    """
+    out = []
+    for thr, wid in ((3.5, 1.0), (1.4, 0.5), (3.5, 0.0)):
+        for U in (0.0, 0.5, 1.0, 1.4, 2.0, 2.4, 2.5, 2.6, 3.0, 3.4, 3.5,
+                  3.6, 4.0, 8.0, 20.0):
+            out.append({"U10_m_s": U, "threshold": thr, "width": wid,
+                        "w_emp": blend_resolved_empirical(U, thr, wid)})
+    return {"cases": out}
+
+
 def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -294,6 +313,7 @@ def main() -> None:
                 "cannot silently double-convert.",
         },
         "cheney": cheney_vectors(),
+        "blend": blend_vectors(),
         "byram": byram_vectors(),
         "levelset": levelset_vectors(),
     }
@@ -303,6 +323,7 @@ def main() -> None:
     print(f"  cheney   : {len(payload['cheney']['from_u10'])} x2 conventions "
           f"+ {len(payload['cheney']['edge'])} edge")
     print(f"  byram    : {len(payload['byram']['cases'])} cases")
+    print(f"  blend    : {len(payload['blend']['cases'])} cases")
     print(f"  levelset : {len(payload['levelset']['cases'])} cases, "
           f"{n_ls} field values")
     print(f"  size     : {OUT.stat().st_size / 1024:.1f} kB")

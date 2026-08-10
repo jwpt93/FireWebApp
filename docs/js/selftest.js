@@ -10,6 +10,7 @@
 import { rosFromU2, rosFromU10, firelineIntensity, flameLength, U2_PER_U10 }
   from './cheney.js';
 import { LevelSet2D } from './levelset.js';
+import { empiricalWeight } from './resolved.js';
 
 /**
  * Tolerance for the closed-form relations.
@@ -137,6 +138,21 @@ export function runChecks(golden) {
           : `${n}/${c.phi.length} cells differ · max Δ ${worst.toExponential(2)}`,
         n === 0,
         n > 0 && at >= 0 ? `worst at cell ${at}` : '');
+  }
+
+  // ── 3b. Phase 19/20 blend weight ────────────────────────────────────────
+  {
+    const cases = golden.blend?.cases ?? [];
+    const got = cases.map((c) => empiricalWeight(c.U10_m_s, c.threshold, c.width));
+    const ref = cases.map((c) => c.w_emp);
+    let bad = -1;
+    for (let i = 0; i < ref.length; i++) if (got[i] !== ref[i]) { bad = i; break; }
+    add('blend.empiricalWeight',
+        bad < 0
+          ? `${cases.length} cases bit-exact (incl. window edges and width=0)`
+          : `differs at U=${cases[bad].U10_m_s} thr=${cases[bad].threshold} ` +
+            `width=${cases[bad].width}: got ${got[bad]} ref ${ref[bad]}`,
+        bad < 0);
   }
 
   // ── 4. Determinism — kernel-level analogue of CLAUDE.md Rule #17 ────────

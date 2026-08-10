@@ -8,6 +8,7 @@ import { FireSim, DOMAIN } from './sim.js';
 import { FireMap } from './firemap.js';
 import { Fig8Panel } from './fig8panel.js';
 import { SideView } from './sideview.js';
+import { ResolvedROS } from './resolved.js';
 import { FUELS, fuelLoad } from './fuels.js';
 import { isExtrapolating, VALID_RANGE } from './cheney.js';
 
@@ -37,6 +38,7 @@ function readControls() {
   }
   sim.params.fuelKey = document.querySelector('input[name=fuel]:checked').value;
   sim.params.shape = document.querySelector('input[name=shape]:checked').value;
+  sim.params.model = document.querySelector('input[name=model]:checked').value;
   sim.params.ignition = document.querySelector('input[name=ignition]:checked').value;
   timeScale = parseFloat($('speed').value);
 }
@@ -58,6 +60,10 @@ function syncReadouts() {
   $('out-flameh').textContent = sim.flameHeight_m.toFixed(2);
   $('out-tilt').textContent = ((sim.flameTilt_rad * 180) / Math.PI).toFixed(0);
   $('out-flamed').textContent = sim.flameDepth_m.toFixed(1);
+  $('out-cheney').textContent = (sim.cheneyRos_m_s * 60).toFixed(1);
+  const corr = sim.cheneyRos_m_s > 0 ? ros / sim.cheneyRos_m_s : 1;
+  $('out-corr').textContent = corr.toFixed(3);
+  renderRegime();
   $('out-load').textContent = fuelLoad(f).toFixed(2);
   $('out-residence').textContent = sim.residence_s.toFixed(0);
   $('out-area').textContent = sim.burntArea_ha.toFixed(2);
@@ -80,6 +86,35 @@ function syncReadouts() {
     const mf = sim.params.moistureFrac * 100;
     if (mf < mLo || mf > mHi) why.push(`moisture outside ${mLo}–${mHi}%`);
     $('extrap-why').textContent = why.join(' and ');
+  }
+}
+
+/**
+ * State which physics is driving the fire at the current slider position.
+ * The whole point of the hybrid is that it changes with wind, so leaving the
+ * viewer to guess would waste it.
+ */
+function renderRegime() {
+  const el = $('regime');
+  const r = sim.regime;
+  if (!r) {
+    el.innerHTML = '<span class="dot r-fit"></span>Cheney regression only — '
+      + 'the resolved solver is switched off.';
+    return;
+  }
+  const thrU2 = sim.resolved.thresholdU2.toFixed(1);
+  const loU2 = sim.resolved.blendStartU2.toFixed(1);
+  if (r.regime === 'fit') {
+    el.innerHTML = `<span class="dot r-fit"></span><b>Regression</b> — below `
+      + `U₂ ${loU2} m/s the resolved closure cannot propagate, so Cheney's fit `
+      + `carries it.`;
+  } else if (r.regime === 'resolved') {
+    el.innerHTML = `<span class="dot r-resolved"></span><b>Resolved solver</b> `
+      + `— at or above U₂ ${thrU2} m/s the rate comes from the 3D run, not the fit.`;
+  } else {
+    el.innerHTML = `<span class="dot r-blend"></span><b>Blending</b> — `
+      + `${Math.round(r.w_emp * 100)}% fit, ${Math.round((1 - r.w_emp) * 100)}% `
+      + `solver, across U₂ ${loU2}–${thrU2} m/s.`;
   }
 }
 
@@ -137,7 +172,7 @@ $('speed').addEventListener('input', () => { readControls(); syncReadouts(); });
 
 // Fuel, shape model and ignition pattern all change the burn from t=0, so
 // changing them restarts rather than leaving a scar from the old settings.
-for (const name of ['fuel', 'shape', 'ignition']) {
+for (const name of ['fuel', 'shape', 'ignition', 'model']) {
   for (const el of document.querySelectorAll(`input[name=${name}]`)) {
     el.addEventListener('change', () => { readControls(); restart(); });
   }
@@ -156,8 +191,14 @@ for (const key of Object.keys(FUELS)) {
   if (el) el.textContent = FUELS[key].label;
 }
 
-const fig8 = await (await fetch('./data/fig8.json')).json();
+const [fig8, resolvedPayload] = await Promise.all([
+  fetch('./data/fig8.json').then((r) => r.json()),
+  fetch('./data/resolved.json').then((r) => r.json()).catch(() => null),
+]);
 panel = new Fig8Panel($('fig8'), fig8);
+// If the resolved table fails to load the sim falls back to the regression,
+// so a bad fetch degrades to Mode A rather than to a stalled fire.
+if (resolvedPayload) sim.resolved = new ResolvedROS(resolvedPayload);
 
 readControls();
 restart();

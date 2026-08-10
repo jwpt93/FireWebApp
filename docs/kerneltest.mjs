@@ -49,6 +49,7 @@ import { stepDragForce } from './js/physics/drag.js';
 import { stepSolidConductionVertical } from './js/physics/solidConduction.js';
 import { stepGasSolidCoupling } from './js/physics/coupling.js';
 import { stepChemistryOdeEdc } from './js/physics/edc.js';
+import { SeparableLaplacian3D } from './js/physics/poisson.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -298,6 +299,22 @@ for (const c of G.edc.cases) {
               `got ${got[at]} ref ${ref[at]}`).join('; '));
 }
 
+// ── SeparableLaplacian3D.solve ────────────────────────────────────────────
+// Compared on the SOLUTION, not on eigenvectors: those are defined only up to
+// sign and ordering, so LAPACK and the implicit-QL solver here legitimately
+// disagree on them while producing the same p.
+for (const c of G.poisson.cases) {
+  const f = (a) => Float64Array.from(a);
+  const sol = new SeparableLaplacian3D({
+    nz: c.nz, ny: 1, nx: c.nx, dx: c.dx, dy: c.dy,
+    dzArr: f(c.dz_arr), dFaceAbove: f(c.d_face_above),
+    dFaceBelow: f(c.d_face_below), epsReg: c.eps_reg,
+  });
+  const p = sol.solve(f(c.rhs));
+  compareFields(`poisson.solve.${c.name}`, [['p', p, c.p_out]], XLANG_TOL,
+                `${c.nz}x1x${c.nx}, own eigensolver (implicit QL) vs LAPACK`);
+}
+
 // ── Rule #17 within the port: every kernel, twice, bit-identical ──────────
 {
   const f = (a) => Float64Array.from(a);
@@ -356,6 +373,16 @@ for (const c of G.edc.cases) {
       mw, co.L_v, co.dt, f(co.dz_arr), co.T_amb,
       { nx: co.nx, ny: co.ny, nz: co.nz });
     return [Tg, Ts, mw];
+  });
+
+  const po = G.poisson.cases[0];
+  checkDeterminism('poisson.solve', () => {
+    const sol = new SeparableLaplacian3D({
+      nz: po.nz, ny: 1, nx: po.nx, dx: po.dx, dy: po.dy,
+      dzArr: f(po.dz_arr), dFaceAbove: f(po.d_face_above),
+      dFaceBelow: f(po.d_face_below), epsReg: po.eps_reg,
+    });
+    return [sol.solve(f(po.rhs))];
   });
 
   const ed = G.edc.cases[0];

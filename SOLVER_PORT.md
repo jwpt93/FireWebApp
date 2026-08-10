@@ -82,14 +82,14 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `drag_3d` | 144 | **done** — bit-exact |
 | `solid_conduction_3d` | 127 | **done** — bit-exact |
 | `chemistry_closures/edc` | 376 | **done** — within tolerance |
+| `fft_poisson_3d` | 228 | **done** — 9.3e-13, own eigensolver |
 | `turbulence_3d` (k-ε) | 949 | to do |
 | `pyrolysis_3d` | 614 | to do |
 | `radiation_3d` (DOM) | 578 | to do |
 | `lagrangian_bed_3d` | 1,070 | to do — **required**, see below |
-| `fft_poisson_3d` | 228 | to do — **not** `projection_3d` (948) |
 | `spread_3d` main loop | — | to do |
 
-**1,551 of ~6,000 done (26%).**
+**1,779 of ~6,000 done (30%).**
 
 ### Two scope probes, both worth the hour
 
@@ -273,8 +273,14 @@ because below U₁₀ = 3.5 the applet uses the Cheney fit rather than the solve
 
 ## 8. Suggested order for the rest
 
-1. **`fft_poisson_3d`** (228) — small, self-contained, and unblocks the
-   momentum→projection loop.
+1. ~~`fft_poisson_3d`~~ — **done.** Needed its own symmetric-tridiagonal
+   eigensolver (implicit QL, ~90 lines) rather than shipping a precomputed
+   eigenbasis, so the grid stays changeable. Ported for **Ny = 1 only**: the
+   y-transform is an FFT over the periodic direction and is the identity for
+   a single cell. It throws for Ny > 1 rather than silently returning
+   something wrong. Verified on the SOLUTION, not on eigenvectors — those are
+   defined only up to sign and ordering, so LAPACK and implicit QL
+   legitimately disagree on them while agreeing on p to 9.3e-13.
 2. **`turbulence_3d`** (949) — k-ε, feeds `k` and `eps` into EDC.
 3. **`pyrolysis_3d`** (614) — feeds `Q_pyro` into coupling.
 4. **`radiation_3d`** (578) — DOM; the only one with a non-local stencil, so

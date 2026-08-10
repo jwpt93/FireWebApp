@@ -383,6 +383,43 @@ def vec_edc():
     return {"cases": cases}
 
 
+def vec_poisson():
+    """SeparableLaplacian3D.solve — the pressure Poisson solve.
+
+    Ny = 1 only: the y-transform is an FFT over the periodic direction and is
+    the identity for a single cell, which is the slab the applet runs.
+
+    The RHS is a divergence-like field (mean removed, sharp local feature) so
+    the solve is exercised the way the projection step exercises it, not on a
+    smooth blob that any solver would get right.
+    """
+    from model_outdoor.physics_3d.fft_poisson_3d import SeparableLaplacian3D
+
+    cases = []
+    for name, nz, _ny, nx in SHAPES:
+        st = make_state(nz, 1, nx, seed=606)
+        sol = SeparableLaplacian3D(
+            nz, 1, nx, st["dx"], st["dy"], st["dz_arr"],
+            st["d_face_above"], st["d_face_below"], 1.0e-6)
+        r = np.random.default_rng(11)
+        rhs = (r.random((nz, 1, nx)) - 0.5) * 8.0
+        # A sharp source, as a real divergence field has near a hot cell.
+        rhs[nz // 3, 0, nx // 2] += 60.0
+        rhs = np.ascontiguousarray(rhs - rhs.mean())
+        pout = sol.solve(rhs)
+        cases.append({
+            "name": name, "nz": nz, "ny": 1, "nx": nx,
+            "dx": st["dx"], "dy": st["dy"], "eps_reg": 1.0e-6,
+            "dz_arr": st["dz_arr"].tolist(),
+            "d_face_above": st["d_face_above"].tolist(),
+            "d_face_below": st["d_face_below"].tolist(),
+            "rhs": rhs.ravel().tolist(),
+            "p_out": pout.ravel().tolist(),
+            "lambda_x": sol.lambda_total_inv.shape[2],
+        })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -401,6 +438,7 @@ def main() -> None:
         "solid_conduction": vec_solid_conduction(),
         "coupling": vec_coupling(),
         "edc": vec_edc(),
+        "poisson": vec_poisson(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -408,6 +446,10 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["poisson"]["cases"]:
+        import math as _m
+        pk = max(abs(v) for v in c["p_out"])
+        print(f"  poisson: {c['name']:8s} {c['nz']}x1x{c['nx']}, |p|max={pk:.4g}")
     for c in payload["edc"]["cases"]:
         print(f"  edc:     {c['name']:14s} {c['n_quenched']:3d} fully quenched, "
               f"{c['n_below_Tign']:3d} below T_ign, {c['n_capped']:3d} T-capped")

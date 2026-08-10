@@ -52,6 +52,7 @@ import { stepChemistryOdeEdc } from './js/physics/edc.js';
 import { SeparableLaplacian3D } from './js/physics/poisson.js';
 import { applyTurbulentDiffusion } from './js/physics/turbulentDiffusion.js';
 import { stepKEpsilon } from './js/physics/kepsilon.js';
+import { DOMRadiationSolver } from './js/physics/dom.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -347,6 +348,30 @@ for (const c of G.kepsilon.cases) {
     XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, ${c.n_canopy} canopy cells`);
 }
 
+// ── DOMRadiationSolver.solve ──────────────────────────────────────────────
+for (const c of G.dom.cases) {
+  const f = (a) => Float64Array.from(a);
+  const n = c.nz * c.ny * c.nx;
+  const sol = new DOMRadiationSolver({
+    nz: c.nz, ny: c.ny, nx: c.nx, dx: c.dx, dy: c.dy, dzArr: f(c.dz_arr),
+  });
+  const qs = new Float64Array(n), qg = new Float64Array(n);
+  const qsoil = new Float64Array(c.ny * c.nx);
+  sol.solve({
+    Ts: f(c.T_s), Tg: f(c.T_g), alphaS: f(c.alpha_s),
+    omegaComb: f(c.omega_comb), sigmaSav: c.sigma_sav, Tamb: c.T_amb,
+    qRadSolidOut: qs, qRadGasOut: qg,
+    TsoilSurface: f(c.T_soil), qInSoilOut: qsoil,
+    YH2O: c.Y_H2O ? f(c.Y_H2O) : null,
+    rho: c.rho ? f(c.rho) : null,
+    bedMoisturePerCell: f(c.bed_moisture),
+  });
+  compareFields(`dom.solve.${c.name}`,
+    [['q_solid', qs, c.q_rad_solid], ['q_gas', qg, c.q_rad_gas],
+     ['q_soil', qsoil, c.q_in_soil]],
+    XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, S4/24 ordinates, source-iterated`);
+}
+
 // ── Rule #17 within the port: every kernel, twice, bit-identical ──────────
 {
   const f = (a) => Float64Array.from(a);
@@ -405,6 +430,23 @@ for (const c of G.kepsilon.cases) {
       mw, co.L_v, co.dt, f(co.dz_arr), co.T_amb,
       { nx: co.nx, ny: co.ny, nz: co.nz });
     return [Tg, Ts, mw];
+  });
+
+  const dm = G.dom.cases[0];
+  checkDeterminism('dom.solve', () => {
+    const n = dm.nz * dm.ny * dm.nx;
+    const sol = new DOMRadiationSolver({
+      nz: dm.nz, ny: dm.ny, nx: dm.nx, dx: dm.dx, dy: dm.dy,
+      dzArr: f(dm.dz_arr),
+    });
+    const qs = new Float64Array(n), qg = new Float64Array(n);
+    sol.solve({
+      Ts: f(dm.T_s), Tg: f(dm.T_g), alphaS: f(dm.alpha_s),
+      omegaComb: f(dm.omega_comb), sigmaSav: dm.sigma_sav, Tamb: dm.T_amb,
+      qRadSolidOut: qs, qRadGasOut: qg, TsoilSurface: f(dm.T_soil),
+      bedMoisturePerCell: f(dm.bed_moisture),
+    });
+    return [qs, qg];
   });
 
   const ke = G.kepsilon.cases[0];

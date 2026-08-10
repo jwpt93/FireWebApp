@@ -519,6 +519,54 @@ def vec_kepsilon():
     return {"cases": cases}
 
 
+def vec_dom():
+    """DOMRadiationSolver.solve — the only non-local kernel in the port.
+
+    Two variants: with and without the Y_H2O absorption channel, since that
+    term is what closes the Cheney moisture gap and deserves its own coverage.
+    """
+    from model_outdoor.physics_3d.dom_3d import DOMRadiationSolver
+
+    cases = []
+    for name, nz, ny, nx in SHAPES:
+        for with_h2o in (False, True):
+            st = make_state(nz, ny, nx, seed=909)
+            r = np.random.default_rng(43)
+            alpha = _bed(nz, ny, nx, r)
+            # Hot flame band inside the bed, cool aloft -> real optical
+            # contrast rather than a uniform slab.
+            T_s = np.ascontiguousarray(300.0 + 900.0 * alpha / max(alpha.max(), 1e-9))
+            T_g = np.ascontiguousarray(300.0 + 1400.0 * r.random((nz, ny, nx)))
+            om = np.ascontiguousarray(1e-4 + 5e-3 * r.random((nz, ny, nx)))
+            YH = np.ascontiguousarray(0.15 * r.random((nz, ny, nx))) if with_h2o else None
+            rho = st["rho"] if with_h2o else None
+            bedM = np.ascontiguousarray(0.3 * r.random((nz, ny, nx)) * (alpha > 0))
+            qs = np.zeros((nz, ny, nx)); qg = np.zeros((nz, ny, nx))
+            qsoil = np.zeros((ny, nx))
+            Tsoil = np.ascontiguousarray(300.0 + 40.0 * r.random((ny, nx)))
+            sol = DOMRadiationSolver(nz, ny, nx, st["dy"], st["dx"],
+                                     st["dz_arr"], st["d_face_above"],
+                                     st["d_face_below"], "periodic", 4)
+            sol.solve(T_s, T_g, alpha, om, 2000.0, 300.0, qs, qg,
+                      Tsoil, qsoil, YH, rho, bedM)
+            cases.append({
+                "name": f"{name}_h2o{int(with_h2o)}", "nz": nz, "ny": ny, "nx": nx,
+                "dx": st["dx"], "dy": st["dy"], "sigma_sav": 2000.0, "T_amb": 300.0,
+                "with_h2o": with_h2o,
+                "T_s": T_s.ravel().tolist(), "T_g": T_g.ravel().tolist(),
+                "alpha_s": alpha.ravel().tolist(), "omega_comb": om.ravel().tolist(),
+                "Y_H2O": (YH.ravel().tolist() if with_h2o else None),
+                "rho": (rho.ravel().tolist() if with_h2o else None),
+                "bed_moisture": bedM.ravel().tolist(),
+                "T_soil": Tsoil.ravel().tolist(),
+                "dz_arr": st["dz_arr"].tolist(),
+                "q_rad_solid": qs.ravel().tolist(),
+                "q_rad_gas": qg.ravel().tolist(),
+                "q_in_soil": qsoil.ravel().tolist(),
+            })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -540,6 +588,7 @@ def main() -> None:
         "poisson": vec_poisson(),
         "turb_diff": vec_turb_diff(),
         "kepsilon": vec_kepsilon(),
+        "dom": vec_dom(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -547,6 +596,9 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["dom"]["cases"]:
+        pk = max(abs(v) for v in c["q_rad_solid"])
+        print(f"  dom:     {c['name']:14s} |q_solid|max={pk:.4g} W/m2")
     for c in payload["kepsilon"]["cases"]:
         print(f"  k-eps:   {c['name']:8s} {c['nz']}x{c['ny']}x{c['nx']}, "
               f"{c['n_canopy']} canopy cells")

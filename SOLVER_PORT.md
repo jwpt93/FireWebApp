@@ -83,13 +83,27 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `solid_conduction_3d` | 127 | **done** — bit-exact |
 | `chemistry_closures/edc` | 376 | **done** — within tolerance |
 | `fft_poisson_3d` | 228 | **done** — 9.3e-13, own eigensolver |
-| `turbulence_3d` (k-ε) | 949 | to do |
-| `pyrolysis_3d` | 614 | to do |
-| `radiation_3d` (DOM) | 578 | to do |
+| `turbulence_3d` (k-ε subset) | 560 | **done** — bit-exact / 1 ulp |
+| ~~`pyrolysis_3d`~~ | ~~614~~ | **NOT NEEDED** — see below |
+| `dom_3d` (DOM radiation) | 473 | **done** — ~1e-13 |
 | `lagrangian_bed_3d` | 1,070 | to do — **required**, see below |
 | `spread_3d` main loop | — | to do |
 
-**1,779 of ~6,000 done (30%).**
+**2,810 of ~4,900 done (57%).**
+
+### `pyrolysis_3d` drops out entirely (614 lines)
+
+The four Eulerian pyrolysis kernels (`step_drying`, `step_pyrolysis_md2004`,
+`step_char_oxidation`, `step_smoldering_oxidation`) sit in the **`else`**
+branch of `lagrangian_bed_enable`. The Cheney run has the Lagrangian bed ON,
+so none of them ever execute — the profile confirms it: zero `pyrolysis:*`
+timing entries, only `lagrangian_bed`. That work happens per-particle instead.
+
+Also out: `radiation_3d` (578) — the run uses `dom_3d` (473). And of
+`turbulence_3d`'s 949 lines only ~560 are needed, since `step_smagorinsky_les`
+and `apply_wall_function` are unused at `k_epsilon` + `wall_function=False`.
+
+Total scope is therefore **~4,900**, not ~6,000.
 
 ### Two scope probes, both worth the hour
 

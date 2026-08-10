@@ -980,6 +980,130 @@ def vec_flame_front():
     return {"cases": cases}
 
 
+def vec_support():
+    """The small loop-support kernels: sponge, wall function, O2 supply,
+    soil conduction, gas-energy advection, front tracking.
+
+    Branch coverage that needed arranging rather than falling out:
+      - sponge: fuel-rich cells INSIDE the sponge zone, so the flame-aware
+        skip actually fires (with a uniform low Y_F it never would)
+      - wall function: bed columns (skip branch), stagnant columns (the
+        1e-12 branch), and columns fast enough to be in the log-law regime
+        AND slow enough to fall into the viscous sublayer
+      - soil: a hot radiative patch beside cold ground, so the T^4 surface
+        loss competes with conduction rather than sitting at equilibrium
+    """
+    from model_outdoor.physics_3d import momentum_3d, turbulence_3d, combustion_3d, soil_3d
+    import model_outdoor.spread_3d as sp3
+
+    cases = []
+    for name, nz, ny, nx in SHAPES:
+        st = make_state(nz, ny, nx, seed=5150)
+        r = np.random.default_rng(90210)
+        dz = st["dz_arr"]
+        dx, dy = st["dx"], st["dy"]
+        n_z_bed = max(nz // 3, 1)
+        alpha = _bed(nz, ny, nx, r)
+
+        # ── sponge ──
+        u_sp = st["u"].copy()
+        u_in_2d = np.ascontiguousarray(2.0 + 0.4 * r.random((nz, ny)))
+        sigma_x = np.zeros(nx)
+        sigma_x[-4:] = np.array([2.0, 4.0, 8.0, 16.0])
+        Y_F = np.zeros((nz, ny, nx))
+        Y_F[:, :, -3:] = 0.05        # flame has reached the sponge -> skip fires
+        momentum_3d.apply_outflow_sponge(u_sp, u_in_2d, sigma_x, Y_F, 1.0e-3, 0.01)
+
+        # ── wall function ──
+        u_wf = st["u"].copy()
+        v_wf = st["v"].copy()
+        u_wf[1, :, :nx // 3] = 0.0       # stagnant columns
+        v_wf[1, :, :nx // 3] = 0.0
+        u_wf[1, :, nx // 3:2 * nx // 3] = 1.0e-4   # viscous-sublayer columns
+        v_wf[1, :, nx // 3:2 * nx // 3] = 0.0
+        # Bare ground over half the domain so the log-law branch runs at all;
+        # with _bed()'s full lower-third bed, alpha_s[0] > 0 everywhere and
+        # EVERY column took the skip branch -- the first attempt tested nothing.
+        alpha_wf = alpha.copy()
+        alpha_wf[0, :, : nx // 2] = 0.0
+        k_gh = np.zeros((ny, nx)); eps_gh = np.zeros((ny, nx))
+        turbulence_3d.apply_wall_function(u_wf, v_wf, st["rho"], alpha_wf, dz,
+                                          k_gh, eps_gh)
+
+        # ── O2 supply ──
+        om_O2 = np.full((nz, ny, nx), 1.0e30)
+        Y_O2 = np.ascontiguousarray(0.232 * r.random((nz, ny, nx)))
+        combustion_3d.step_o2_supply_rate(
+            st["rho"], st["u"], st["v"], st["w"], Y_O2, dx, dy, dz, om_O2)
+
+        # ── soil ──
+        s_dz, s_above, s_below, s_depth = soil_3d.build_soil_grid()
+        n_soil = s_dz.shape[0]
+        T_soil = np.full((n_soil, ny, nx), 300.0)
+        T_soil[0, :, nx // 2:] = 480.0     # already-heated patch
+        q_in_soil = np.zeros((ny, nx))
+        q_in_soil[:, nx // 3:] = 4.0e4     # radiation on part of the ground
+        T_soil_in = T_soil.copy()
+        soil_3d.step_soil_conduction(
+            T_soil, q_in_soil, 0.01, s_dz, s_above, s_below,
+            alpha_s=soil_3d.K_SOIL_DEFAULT
+                    / (soil_3d.RHO_SOIL_DEFAULT * soil_3d.CP_SOIL_DEFAULT),
+            k_s=soil_3d.K_SOIL_DEFAULT, rho_s=soil_3d.RHO_SOIL_DEFAULT,
+            cp_s=soil_3d.CP_SOIL_DEFAULT, eps_s=soil_3d.EPS_SOIL_DEFAULT,
+            T_amb=300.0)
+
+        # ── gas-energy advection ──
+        T_g = np.ascontiguousarray(300.0 + 1200.0 * st["phi"])
+        T_g_in = T_g.copy()
+        sp3._adv_gas_energy(T_g, st["u"], st["v"], st["w"], 2.0e-3, dx, dy,
+                            dz, st["d_face_above"], st["d_face_below"],
+                            alpha_th=2.0e-5, T_amb=300.0)
+
+        cases.append({
+            "name": name, "nz": nz, "ny": ny, "nx": nx,
+            "dx": dx, "dy": dy, "dz_arr": dz.tolist(),
+            "d_face_above": st["d_face_above"].tolist(),
+            "d_face_below": st["d_face_below"].tolist(),
+            "n_z_bed": n_z_bed,
+            "rho": st["rho"].ravel().tolist(),
+            "u": st["u"].ravel().tolist(), "v": st["v"].ravel().tolist(),
+            "w": st["w"].ravel().tolist(),
+            "alpha_s": alpha.ravel().tolist(),
+            # sponge
+            "sponge_u_in": st["u"].ravel().tolist(),
+            "sponge_u_target": u_in_2d.ravel().tolist(),
+            "sponge_sigma_x": sigma_x.tolist(),
+            "sponge_Y_F": Y_F.ravel().tolist(),
+            "sponge_Y_F_skip": 1.0e-3, "sponge_dt": 0.01,
+            "sponge_u_out": u_sp.ravel().tolist(),
+            "n_sponge_skipped": int(((sigma_x > 0)[None, None, :]
+                                     & (Y_F >= 1.0e-3)).sum()),
+            # wall function
+            "wf_u": u_wf.ravel().tolist(), "wf_v": v_wf.ravel().tolist(),
+            "wf_k_min": turbulence_3d.K_MIN, "wf_eps_min": turbulence_3d.EPS_MIN,
+            "wf_k_out": k_gh.ravel().tolist(),
+            "wf_eps_out": eps_gh.ravel().tolist(),
+            "wf_alpha_s": alpha_wf.ravel().tolist(),
+            "n_wf_bed": int((alpha_wf[0] > 0).sum()),
+            "n_wf_loglaw": int((alpha_wf[0] <= 0).sum()),
+            # O2 supply
+            "Y_O2": Y_O2.ravel().tolist(),
+            "o2_out": om_O2.ravel().tolist(),
+            "n_o2_written": int((om_O2 < 1.0e29).sum()),
+            # soil
+            "soil_dz": s_dz.tolist(), "soil_d_above": s_above.tolist(),
+            "soil_d_below": s_below.tolist(), "n_soil": int(n_soil),
+            "soil_depth": s_depth,
+            "soil_T_in": T_soil_in.ravel().tolist(),
+            "soil_q_in": q_in_soil.ravel().tolist(),
+            "soil_dt": 0.01, "soil_T_out": T_soil.ravel().tolist(),
+            # gas energy
+            "Tg_in": T_g_in.ravel().tolist(),
+            "Tg_out": T_g.ravel().tolist(), "gas_dt": 2.0e-3,
+        })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -1005,6 +1129,7 @@ def main() -> None:
         "lagrangian_bed": vec_lagrangian_bed(),
         "projection": vec_projection(),
         "flame_front": vec_flame_front(),
+        "support": vec_support(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -1012,6 +1137,10 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["support"]["cases"]:
+        print(f"  support: {c['name']:8s} sponge skips {c['n_sponge_skipped']} "
+              f"flame cells, {c['n_wf_bed']} bed columns skip the wall fn, "
+              f"O2 wrote {c['n_o2_written']} cells, {c['n_soil']} soil layers")
     for c in payload["flame_front"]["cases"]:
         print(f"  lset:    {c['name']:8s} {c['n_active']} active-flame cells, "
               f"{c['n_ahead']} in ahead-band, band={c['band_m']:.3f} m, "

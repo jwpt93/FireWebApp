@@ -89,14 +89,14 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `lagrangian_bed_3d` | 1,070 | **done** — init/conduction bit-exact, step ~1e-15 |
 | `projection_3d` (fft_pcg path) | 450 of 948 | **done** — operator 1e-14, same residual |
 | `flame_front_3d` (level set + v_n) | ~500 of 835 | **done** — bit-exact; own exact EDT |
-| `soil_3d` | 153 | to do |
-| `combustion_3d` (O2 supply only) | 66 of 251 | to do |
-| `momentum_3d.apply_outflow_sponge` | 30 | to do |
-| `turbulence_3d.apply_wall_function` | 60 | to do |
-| `spread_3d` BC + advection helpers | 130 | to do |
+| `soil_3d` | 153 | **done** — bit-exact |
+| `combustion_3d` (O2 supply only) | 66 of 251 | **done** — bit-exact |
+| `momentum_3d.apply_outflow_sponge` | 30 | **done** — bit-exact |
+| `turbulence_3d.apply_wall_function` | 60 | **done** — bit-exact |
+| `spread_3d` BC + advection helpers | 130 | **done** — bit-exact |
 | `spread_3d` main loop | ~800 | to do |
 
-**4,830 of ~6,100 done (79%).** 89/89 kernel checks pass.
+**5,270 of ~6,100 done (86%).** 102/102 kernel checks pass. Only the main loop is left.
 
 ### The ~4,900 estimate was wrong — it is ~6,100
 
@@ -194,6 +194,21 @@ early-returns), pre-loaded accumulators (catches assign-vs-accumulate),
 pre-filled outputs (catches the reverse), and water content tuned so the
 evaporation cap binds — at the first attempt **zero** cells dried and half
 that branch was silently untested.
+
+---
+
+### A constant I assumed instead of checking
+
+`S_STOICH` is **1.3**, not 1.35. I wrote 1.35 from memory into the O2-supply
+port and it came back as a systematic 3.7% error on every written cell — not
+one cell, all 96, which is the signature of a wrong constant rather than a
+wrong index.
+
+Cheap to catch here because the vectors exist. The lesson is narrower than "be
+careful": a plausible-looking physical constant is exactly the kind of thing
+that survives review, because 1.35 is not obviously wrong for a biomass
+stoichiometric ratio. Read the constant out of the module; never type it from
+memory.
 
 ---
 

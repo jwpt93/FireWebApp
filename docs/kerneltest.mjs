@@ -64,6 +64,10 @@ import {
   computeQInAtFront3d, computeVn3d, computePhiFlameFromState,
   flameBodyMaskFromPhiFlame, updateCellAge,
 } from './js/physics/flameFront.js';
+import {
+  applyOutflowSponge, applyWallFunction, stepO2SupplyRate,
+  buildSoilGrid, stepSoilConduction, advGasEnergy,
+} from './js/physics/support.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -381,6 +385,60 @@ for (const c of G.dom.cases) {
     [['q_solid', qs, c.q_rad_solid], ['q_gas', qg, c.q_rad_gas],
      ['q_soil', qsoil, c.q_in_soil]],
     XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, S4/24 ordinates, source-iterated`);
+}
+
+// ── Loop-support kernels ──────────────────────────────────────────────────
+for (const c of G.support.cases) {
+  const f = (a) => Float64Array.from(a);
+  const shape = { nx: c.nx, ny: c.ny, nz: c.nz };
+  const n = c.nz * c.ny * c.nx;
+
+  const uSp = f(c.sponge_u_in);
+  applyOutflowSponge(uSp, f(c.sponge_u_target), f(c.sponge_sigma_x),
+    f(c.sponge_Y_F), c.sponge_Y_F_skip, c.sponge_dt, shape);
+  compareFields(`support.sponge.${c.name}`,
+    [['u', uSp, c.sponge_u_out]], XLANG_TOL,
+    `${c.n_sponge_skipped} fuel-bearing cells skipped in the sponge zone`);
+
+  const kGh = new Float64Array(c.ny * c.nx);
+  const epsGh = new Float64Array(c.ny * c.nx);
+  applyWallFunction(f(c.wf_u), f(c.wf_v), f(c.rho), f(c.wf_alpha_s),
+    f(c.dz_arr), kGh, epsGh,
+    { ...shape, kMin: c.wf_k_min, epsMin: c.wf_eps_min });
+  compareFields(`support.wallFunction.${c.name}`,
+    [['k_ghost', kGh, c.wf_k_out], ['eps_ghost', epsGh, c.wf_eps_out]],
+    XLANG_TOL,
+    `${c.n_wf_bed} bed columns skipped, ${c.n_wf_loglaw} through the log law`);
+
+  const om = new Float64Array(n).fill(1.0e30);
+  stepO2SupplyRate(f(c.rho), f(c.u), f(c.v), f(c.w), f(c.Y_O2),
+    c.dx, c.dy, f(c.dz_arr), om, shape);
+  compareFields(`support.o2Supply.${c.name}`,
+    [['omega_O2', om, c.o2_out]], XLANG_TOL,
+    c.n_o2_written === 0
+      ? 'Ny=1: interior loop is EMPTY, every cell keeps the 1e30 fill'
+      : `${c.n_o2_written} interior cells written`);
+
+  // Soil grid is rebuilt rather than read back, so buildSoilGrid is checked too.
+  const sg = buildSoilGrid();
+  compareFields(`support.soilGrid.${c.name}`,
+    [['dz', sg.soilDz, c.soil_dz], ['d_above', sg.dAbove, c.soil_d_above],
+     ['d_below', sg.dBelow, c.soil_d_below]],
+    XLANG_TOL, `${c.n_soil} layers, ${(c.soil_depth * 1000).toFixed(1)} mm deep`);
+
+  const Tsoil = f(c.soil_T_in);
+  stepSoilConduction(Tsoil, f(c.soil_q_in), c.soil_dt, sg.soilDz,
+    sg.dAbove, sg.dBelow,
+    { nx: c.nx, ny: c.ny, nSoil: c.n_soil, Tamb: 300.0 });
+  compareFields(`support.soilConduction.${c.name}`,
+    [['T_soil', Tsoil, c.soil_T_out]], XLANG_TOL,
+    'T^4 surface loss against conduction');
+
+  const Tg = f(c.Tg_in);
+  advGasEnergy(Tg, f(c.u), f(c.v), f(c.w), c.gas_dt, c.dx, c.dy, f(c.dz_arr),
+    f(c.d_face_above), f(c.d_face_below), 2.0e-5, 300.0, shape);
+  compareFields(`support.gasEnergy.${c.name}`,
+    [['T_g', Tg, c.Tg_out]], XLANG_TOL, 'MUSCL advection + FV diffusion');
 }
 
 // ── Level-set front + flame geometry ──────────────────────────────────────
@@ -762,6 +820,15 @@ for (const c of G.lagrangian_bed.cases) {
       { extinctionEnable: ed.extinction_enable, sStoich: ed.s_stoich,
         hocJ: ed.hoc_J });
     return [Tg, Yf, YO2, om];
+  });
+
+  const sup = G.support.cases[0];
+  checkDeterminism('support.gasEnergy', () => {
+    const Tg = f(sup.Tg_in);
+    advGasEnergy(Tg, f(sup.u), f(sup.v), f(sup.w), sup.gas_dt, sup.dx, sup.dy,
+      f(sup.dz_arr), f(sup.d_face_above), f(sup.d_face_below), 2.0e-5, 300.0,
+      { nx: sup.nx, ny: sup.ny, nz: sup.nz });
+    return [Tg];
   });
 
   const ls = G.flame_front.cases[0];

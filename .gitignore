@@ -28,3 +28,7 @@ plots/
 
 # Numba cache
 .numba_cache/
+
+# Published literature is never committed to a public-facing branch.
+# Cite it and link the DOI instead; keep local copies out of the repo.
+*.pdf

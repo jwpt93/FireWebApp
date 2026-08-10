@@ -156,8 +156,13 @@ Outputs go to `local/diagnostics/` (created on first run).
 
 ## Validation data — Cheney 1993 Fig 8
 
-`data/cheney_experimental/`:
-- `cheney1993.pdf` — the paper.
+**The paper itself is not in this repo, and must not be.** Published
+literature is not committed to a public-facing branch — cite it and link the
+DOI instead. The source is:
+
+> Cheney NP, Gould JS, Catchpole WR (1993). “The influence of fuel, weather and fire shape variables on fire-spread in grasslands.” *International Journal of Wildland Fire* **3**(1): 31–44. [doi:10.1071/WF9930031](https://doi.org/10.1071/WF9930031)
+
+`data/cheney_experimental/` holds only our own digitisation of it:
 - `cheney1993_fig8_data_v2.json` — digitised Fig 8 (ROS vs **U_2** for
   natural / cut grass at various moisture bins). This is the target
   the Tier-3 sweep validates against, and the empirical Tier 1 is

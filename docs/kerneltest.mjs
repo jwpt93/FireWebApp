@@ -51,6 +51,7 @@ import { stepGasSolidCoupling } from './js/physics/coupling.js';
 import { stepChemistryOdeEdc } from './js/physics/edc.js';
 import { SeparableLaplacian3D } from './js/physics/poisson.js';
 import { applyTurbulentDiffusion } from './js/physics/turbulentDiffusion.js';
+import { stepKEpsilon } from './js/physics/kepsilon.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -327,6 +328,25 @@ for (const c of G.turb_diff.cases) {
                 `${c.nz}x${c.ny}x${c.nx}, ${c.n_sub} sub-steps`);
 }
 
+// ── step_k_epsilon ────────────────────────────────────────────────────────
+// Vectors regenerated after the 2026-08-10 upstream fix to the dT/dz
+// boundaries (the old code read out of bounds at k=0 and k=Nz-1).
+for (const c of G.kepsilon.cases) {
+  const f = (a) => Float64Array.from(a);
+  const n = c.nz * c.ny * c.nx;
+  const kT = f(c.k_in), eT = f(c.eps_in);
+  const nuT = new Float64Array(n);
+  stepKEpsilon(kT, eT, nuT, f(c.u), f(c.v), f(c.w), f(c.T_g), f(c.rho),
+    f(c.alpha_s), c.sigma_sav, c.dt, c.dx, c.dy, f(c.dz_arr),
+    f(c.d_face_above), f(c.d_face_below), c.T_amb,
+    new Float64Array(n), new Float64Array(n), f(c.u_inlet),
+    f(c.k_wall_ghost), f(c.eps_wall_ghost), c.beta_p, c.beta_d,
+    { nx: c.nx, ny: c.ny, nz: c.nz });
+  compareFields(`kEpsilon.${c.name}`,
+    [['k', kT, c.k_out], ['eps', eT, c.eps_out], ['nu_t', nuT, c.nu_t_out]],
+    XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, ${c.n_canopy} canopy cells`);
+}
+
 // ── Rule #17 within the port: every kernel, twice, bit-identical ──────────
 {
   const f = (a) => Float64Array.from(a);
@@ -385,6 +405,19 @@ for (const c of G.turb_diff.cases) {
       mw, co.L_v, co.dt, f(co.dz_arr), co.T_amb,
       { nx: co.nx, ny: co.ny, nz: co.nz });
     return [Tg, Ts, mw];
+  });
+
+  const ke = G.kepsilon.cases[0];
+  checkDeterminism('kEpsilon', () => {
+    const n = ke.nz * ke.ny * ke.nx;
+    const kT = f(ke.k_in), eT = f(ke.eps_in), nuT = new Float64Array(n);
+    stepKEpsilon(kT, eT, nuT, f(ke.u), f(ke.v), f(ke.w), f(ke.T_g), f(ke.rho),
+      f(ke.alpha_s), ke.sigma_sav, ke.dt, ke.dx, ke.dy, f(ke.dz_arr),
+      f(ke.d_face_above), f(ke.d_face_below), ke.T_amb,
+      new Float64Array(n), new Float64Array(n), f(ke.u_inlet),
+      f(ke.k_wall_ghost), f(ke.eps_wall_ghost), ke.beta_p, ke.beta_d,
+      { nx: ke.nx, ny: ke.ny, nz: ke.nz });
+    return [kT, eT, nuT];
   });
 
   const td = G.turb_diff.cases[0];

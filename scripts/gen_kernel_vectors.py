@@ -461,6 +461,64 @@ def vec_turb_diff():
     return {"cases": cases}
 
 
+def vec_kepsilon():
+    """step_k_epsilon — realizable k-eps with the FIXED dT/dz boundaries.
+
+    Generated AFTER the 2026-08-10 upstream fix that replaced the
+    out-of-bounds T_g[k+1]/T_g[k-1] reads with one-sided differences.  Vectors
+    generated before that fix are not comparable.
+
+    T_g is shaped so buoyancy takes both signs (unstable low down, stable
+    aloft), and alpha_s is a bed so the Sanz canopy terms fire in some cells
+    and not others.
+    """
+    from model_outdoor.physics_3d import turbulence_3d as T
+
+    cases = []
+    for name, nz, ny, nx in SHAPES:
+        st = make_state(nz, ny, nx, seed=1717)
+        r = np.random.default_rng(31)
+        alpha = _bed(nz, ny, nx, r)
+        # Hot near the ground, cooling aloft -> dT/dz negative low (unstable,
+        # G_k > 0) and positive higher (stable, G_k clamped to 0).
+        zc = np.arange(nz)[:, None, None] / max(nz - 1, 1)
+        T_g = np.ascontiguousarray(1100.0 - 700.0 * zc + 60.0 * r.random((nz, ny, nx)))
+        k_t = np.ascontiguousarray(1e-4 + 1.5 * r.random((nz, ny, nx)))
+        eps = np.ascontiguousarray(1e-5 + 2.0 * r.random((nz, ny, nx)))
+        nu_t = np.zeros((nz, ny, nx))
+        S = np.zeros((nz, ny, nx)); O = np.zeros((nz, ny, nx))
+        u_inl = np.ascontiguousarray(0.4 + 3.0 * np.sqrt(
+            np.arange(nz)[:, None] / max(nz - 1, 1)) * np.ones((nz, ny)))
+        kw = np.full((ny, nx), 1.0e-3)
+        ew = np.full((ny, nx), 1.0e-2)
+        k_in, e_in = k_t.copy(), eps.copy()
+        T.step_k_epsilon(
+            k_t, eps, nu_t, st["u"], st["v"], st["w"], T_g, st["rho"], alpha,
+            2000.0, 1.5e-3, st["dx"], st["dy"], st["dz_arr"],
+            st["d_face_above"], st["d_face_below"], 300.0, S, O, u_inl,
+            kw, ew, 1.0, 4.0, 0.0, 0.0, 0.0,
+            np.zeros(nz, dtype=np.int64), np.zeros(nz, dtype=np.int64))
+        cases.append({
+            "name": name, "nz": nz, "ny": ny, "nx": nx,
+            "sigma_sav": 2000.0, "dt": 1.5e-3, "dx": st["dx"], "dy": st["dy"],
+            "T_amb": 300.0, "beta_p": 1.0, "beta_d": 4.0,
+            "k_in": k_in.ravel().tolist(), "eps_in": e_in.ravel().tolist(),
+            "u": st["u"].ravel().tolist(), "v": st["v"].ravel().tolist(),
+            "w": st["w"].ravel().tolist(), "T_g": T_g.ravel().tolist(),
+            "rho": st["rho"].ravel().tolist(), "alpha_s": alpha.ravel().tolist(),
+            "dz_arr": st["dz_arr"].tolist(),
+            "d_face_above": st["d_face_above"].tolist(),
+            "d_face_below": st["d_face_below"].tolist(),
+            "u_inlet": u_inl.ravel().tolist(),
+            "k_wall_ghost": kw.ravel().tolist(),
+            "eps_wall_ghost": ew.ravel().tolist(),
+            "k_out": k_t.ravel().tolist(), "eps_out": eps.ravel().tolist(),
+            "nu_t_out": nu_t.ravel().tolist(),
+            "n_canopy": int((alpha > 0).sum()),
+        })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -481,6 +539,7 @@ def main() -> None:
         "edc": vec_edc(),
         "poisson": vec_poisson(),
         "turb_diff": vec_turb_diff(),
+        "kepsilon": vec_kepsilon(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -488,6 +547,9 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["kepsilon"]["cases"]:
+        print(f"  k-eps:   {c['name']:8s} {c['nz']}x{c['ny']}x{c['nx']}, "
+              f"{c['n_canopy']} canopy cells")
     for c in payload["turb_diff"]["cases"]:
         print(f"  turbdiff:{c['name']:12s} sc_t={c['sc_t']}, n_sub={c['n_sub']}")
     for c in payload["poisson"]["cases"]:

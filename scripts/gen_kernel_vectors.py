@@ -567,6 +567,208 @@ def vec_dom():
     return {"cases": cases}
 
 
+def vec_lagrangian_bed():
+    """The four Lagrangian bed-particle kernels.
+
+    Particle-based, so the vectors carry flat per-slot arrays rather than the
+    (Nz,Ny,Nx) fields every other kernel here uses.
+
+    The initial particle state comes from the REAL initialiser, then is
+    perturbed to spread the population across every branch that matters:
+
+      - T_s spanning 290 K to 1100 K, so cells fall on both sides of
+        T_SMOLD_ONSET (473 K) and T_CHAR_ONSET (600 K)
+      - a fifth of the particles fully dry (m_water = 0), which switches off
+        both the Arrhenius drying branch and the equilibrium override
+      - pre-existing char on some particles, so char-ox has something to eat
+        on step one rather than needing pyrolysis to run first
+      - a handful pushed outside the domain, firing the retire-on-exit path
+      - a handful driven under M_PARTICLE_BURNOUT, firing the burnout path
+      - a low O2 patch that drops below Y_O2_MIN_OP, so oxidative pyrolysis
+        switches off while thermal pyrolysis continues
+
+    Two configurations, because the drying mode and the view-factor mode are
+    genuinely different code paths and production uses the second of each:
+      combined  = DRY_MODE_COMBINED + geometric view factor + ash penalty
+      arrhenius = DRY_MODE_ARRHENIUS + scalar view factor + no ash penalty
+    """
+    from model_outdoor.physics_3d import lagrangian_bed_3d as lb
+
+    cases = []
+    configs = [
+        ("combined", lb.DRY_MODE_COMBINED, True, 0.5),
+        ("arrhenius", lb.DRY_MODE_ARRHENIUS, False, 0.0),
+    ]
+    for name, nz, ny, nx in SHAPES:
+        for cname, dry_mode, geom, ash_exp in configs:
+            st = make_state(nz, ny, nx, seed=4242)
+            r = np.random.default_rng(8675309)
+            dz = st["dz_arr"]
+            dx, dy = st["dx"], st["dy"]
+            z_face = np.concatenate(([0.0], np.cumsum(dz)))
+            n_z_bed = max(nz // 3, 1)
+            alpha = _bed(nz, ny, nx, r)
+
+            n_per_cell = 4
+            n_max = n_z_bed * ny * nx * n_per_cell
+            buf = lb.allocate_bed_particle_buffers(n_max)
+            n_alloc = lb.initialize_bed_particles_from_alpha_s(
+                buf, alpha, rho_b_dry=0.9, moisture_frac=0.08, T_amb=300.0,
+                dx=dx, dy=dy, dz_arr=dz, n_z_bed=n_z_bed,
+                n_per_cell=n_per_cell, sav=lb.SAV_GRASS_DEFAULT,
+            )
+            # Snapshot the pristine initialiser output — that function is
+            # verified on its own, before any perturbation.
+            init_x = buf["x"].copy()
+            init_y = buf["y"].copy()
+            init_z = buf["z"].copy()
+            init_ms = buf["m_solid"].copy()
+            init_mw = buf["m_water"].copy()
+            init_alive = buf["alive"].copy()
+
+            # ── Perturb into a mid-fire population ──
+            q = r.random(n_max)
+            buf["T_s"][:] = 290.0 + 810.0 * q
+            buf["m_char"][:] = buf["m_solid"] * 0.10 * r.random(n_max)
+            buf["m_char_max"][:] = buf["m_char"] * (1.0 + 0.6 * r.random(n_max))
+            dryers = q < 0.20
+            buf["m_water"][dryers] = 0.0
+            # A few sent out of the domain (retire path) and a few starved to
+            # burnout (retire path's other half).
+            if n_alloc > 12:
+                buf["x"][3] = -1.0
+                buf["y"][5] = (ny + 2) * dy
+                buf["z"][7] = z_face[nz] + 1.0
+                for p in (9, 11):
+                    buf["m_solid"][p] = 1.0e-10
+                    buf["m_water"][p] = 0.0
+                    buf["m_char"][p] = 1.0e-10
+                buf["alive"][13] = lb.ALIVE_FALSE   # already-dead slot skipped
+
+            T_g = np.ascontiguousarray(300.0 + 1500.0 * r.random((nz, ny, nx)))
+            Y_O2 = np.ascontiguousarray(0.23 * r.random((nz, ny, nx)))
+            Y_O2[Y_O2 < 0.02] = 0.0005      # sub-Y_O2_MIN patch
+            Q_ext = np.ascontiguousarray(1.0e4 * (r.random((nz, ny, nx)) - 0.4))
+
+            inp = {k: buf[k].copy() for k in
+                   ("x", "y", "z", "alive", "m_solid", "m_water", "m_char",
+                    "T_s", "m_water_0", "sav", "m_char_max")}
+
+            src = {k: np.zeros((nz, ny, nx)) for k in
+                   ("S_pyro", "S_drying", "Q_pyro", "Q_drying", "Y_F_source",
+                    "Q_char", "Q_smold", "Q_g_conv")}
+            n_alive_out = np.zeros(1, dtype=np.int64)
+            n_burned_out = np.zeros(1, dtype=np.int64)
+            diag = np.zeros(16)
+
+            h_bed = float(z_face[n_z_bed])
+            lb.step_bed_particles(
+                buf["x"], buf["y"], buf["z"], buf["alive"],
+                buf["m_solid"], buf["m_water"], buf["m_char"], buf["T_s"],
+                buf["m_water_0"], buf["sav"],
+                T_g, Y_O2, Q_ext, n_per_cell,
+                src["S_pyro"], src["S_drying"], src["Q_pyro"], src["Q_drying"],
+                src["Y_F_source"], src["Q_char"], src["Q_smold"], src["Q_g_conv"],
+                dx, dy, dz, z_face,
+                lb.H_CONV_DEFAULT, lb.RHO_SOLID_TRUE_GRASS, lb.CP_SOLID_GRASS,
+                lb.EPS_SOLID_DEFAULT, 300.0, 0.7, geom, h_bed, 4.5, 0.02,
+                True, True, True, True,
+                dry_mode, 1.0e5, ash_exp, buf["m_char_max"],
+                n_alive_out, n_burned_out, diag,
+            )
+
+            # ── The two aggregators, run on the POST-step particle state ──
+            T_s_grid = np.full((nz, ny, nx), 300.0)
+            lb.aggregate_particles_to_T_s_grid(
+                buf["x"], buf["y"], buf["z"], buf["alive"],
+                buf["m_solid"], buf["m_water"], buf["m_char"], buf["T_s"],
+                dx, dy, z_face, T_s_grid, 300.0,
+            )
+            M_grid = np.zeros((nz, ny, nx))
+            lb.aggregate_particles_to_M_local_grid(
+                buf["x"], buf["y"], buf["z"], buf["alive"],
+                buf["m_solid"], buf["m_water"],
+                dx, dy, z_face, M_grid,
+            )
+
+            # ── Horizontal conduction, on a copy so its inputs stay pinned ──
+            cond_T_in = np.ascontiguousarray(T_s_grid.copy())
+            cond_T = cond_T_in.copy()
+            cond_part_T = buf["T_s"].copy()
+            lb.step_horizontal_solid_conduction_scatter(
+                buf["x"], buf["y"], buf["z"], buf["alive"],
+                buf["m_solid"], buf["m_water"], buf["m_char"], cond_part_T,
+                cond_T, alpha, dx, dy, z_face,
+                0.09, lb.RHO_SOLID_TRUE_GRASS, lb.CP_SOLID_GRASS,
+                n_z_bed, 0.02,
+            )
+
+            cases.append({
+                "name": f"{name}_{cname}", "nz": nz, "ny": ny, "nx": nx,
+                "dx": dx, "dy": dy, "dz_arr": dz.tolist(),
+                "z_face": z_face.tolist(), "n_z_bed": n_z_bed,
+                "n_per_cell": n_per_cell, "n_max": n_max, "n_alloc": n_alloc,
+                "rho_b_dry": 0.9, "moisture_frac": 0.08, "T_amb": 300.0,
+                "sav": lb.SAV_GRASS_DEFAULT, "h_bed": h_bed,
+                "kappa_bed_eff": 4.5, "view_factor": 0.7,
+                "view_factor_geometric": geom, "drying_mode": dry_mode,
+                "char_ox_ash_exp": ash_exp, "char_ox_flux_cap": 1.0e5,
+                "dt": 0.02, "h_conv": lb.H_CONV_DEFAULT,
+                "rho_solid_true": lb.RHO_SOLID_TRUE_GRASS,
+                "cp_solid": lb.CP_SOLID_GRASS, "eps_solid": lb.EPS_SOLID_DEFAULT,
+                "k_solid": 0.09,
+                "alpha_s": alpha.ravel().tolist(),
+                "T_g": T_g.ravel().tolist(), "Y_O2": Y_O2.ravel().tolist(),
+                "Q_solid_ext": Q_ext.ravel().tolist(),
+                # initialiser output
+                "init_x": init_x.tolist(), "init_y": init_y.tolist(),
+                "init_z": init_z.tolist(), "init_m_solid": init_ms.tolist(),
+                "init_m_water": init_mw.tolist(),
+                "init_alive": init_alive.tolist(),
+                # step inputs
+                "in_x": inp["x"].tolist(), "in_y": inp["y"].tolist(),
+                "in_z": inp["z"].tolist(),
+                "in_alive": inp["alive"].tolist(),
+                "in_m_solid": inp["m_solid"].tolist(),
+                "in_m_water": inp["m_water"].tolist(),
+                "in_m_char": inp["m_char"].tolist(),
+                "in_T_s": inp["T_s"].tolist(),
+                "in_m_water_0": inp["m_water_0"].tolist(),
+                "in_sav": inp["sav"].tolist(),
+                "in_m_char_max": inp["m_char_max"].tolist(),
+                # step outputs
+                "out_alive": buf["alive"].tolist(),
+                "out_m_solid": buf["m_solid"].tolist(),
+                "out_m_water": buf["m_water"].tolist(),
+                "out_m_char": buf["m_char"].tolist(),
+                "out_T_s": buf["T_s"].tolist(),
+                "out_m_char_max": buf["m_char_max"].tolist(),
+                "out_S_pyro": src["S_pyro"].ravel().tolist(),
+                "out_S_drying": src["S_drying"].ravel().tolist(),
+                "out_Q_pyro": src["Q_pyro"].ravel().tolist(),
+                "out_Q_drying": src["Q_drying"].ravel().tolist(),
+                "out_Y_F_source": src["Y_F_source"].ravel().tolist(),
+                "out_Q_char": src["Q_char"].ravel().tolist(),
+                "out_Q_smold": src["Q_smold"].ravel().tolist(),
+                "out_Q_g_conv": src["Q_g_conv"].ravel().tolist(),
+                "out_n_alive": int(n_alive_out[0]),
+                "out_n_burned": int(n_burned_out[0]),
+                "out_diag": diag.tolist(),
+                # aggregators
+                "out_T_s_grid": T_s_grid.ravel().tolist(),
+                "out_M_local": M_grid.ravel().tolist(),
+                # conduction
+                "cond_T_in": cond_T_in.ravel().tolist(),
+                "cond_T_out": cond_T.ravel().tolist(),
+                "cond_part_T_out": cond_part_T.tolist(),
+                # branch-coverage counters, printed by main()
+                "n_dry": int((inp["m_water"] == 0.0).sum()),
+                "n_above_char": int((inp["T_s"] >= 600.0).sum()),
+                "n_lowO2": int((Y_O2 <= 0.001).sum()),
+            })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -589,6 +791,7 @@ def main() -> None:
         "turb_diff": vec_turb_diff(),
         "kepsilon": vec_kepsilon(),
         "dom": vec_dom(),
+        "lagrangian_bed": vec_lagrangian_bed(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -596,6 +799,11 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["lagrangian_bed"]["cases"]:
+        print(f"  bed:     {c['name']:18s} {c['n_alloc']:4d} particles, "
+              f"{c['out_n_alive']} alive / {c['out_n_burned']} burned, "
+              f"{c['n_dry']} dry, {c['n_above_char']} above char onset, "
+              f"{c['n_lowO2']} low-O2 cells")
     for c in payload["dom"]["cases"]:
         pk = max(abs(v) for v in c["q_rad_solid"])
         print(f"  dom:     {c['name']:14s} |q_solid|max={pk:.4g} W/m2")

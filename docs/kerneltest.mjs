@@ -53,6 +53,11 @@ import { SeparableLaplacian3D } from './js/physics/poisson.js';
 import { applyTurbulentDiffusion } from './js/physics/turbulentDiffusion.js';
 import { stepKEpsilon } from './js/physics/kepsilon.js';
 import { DOMRadiationSolver } from './js/physics/dom.js';
+import {
+  allocateBedParticleBuffers, initializeBedParticlesFromAlphaS,
+  stepBedParticles, aggregateParticlesToTsGrid,
+  aggregateParticlesToMLocalGrid, stepHorizontalSolidConductionScatter,
+} from './js/physics/lagrangianBed.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -372,6 +377,116 @@ for (const c of G.dom.cases) {
     XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, S4/24 ordinates, source-iterated`);
 }
 
+// ── Lagrangian bed particles ──────────────────────────────────────────────
+// Four kernels, checked in the order the solver calls them. The vectors carry
+// flat per-slot particle arrays rather than (Nz,Ny,Nx) fields, so this block
+// builds its state differently from every other one above.
+for (const c of G.lagrangian_bed.cases) {
+  const f = (a) => Float64Array.from(a);
+  const i32 = (a) => Int32Array.from(a);
+  const shape = { nx: c.nx, ny: c.ny, nz: c.nz };
+  const n = c.nz * c.ny * c.nx;
+
+  // 1. The initialiser. Deterministic coprime-mod packing, no RNG anywhere,
+  //    so this one genuinely should be bit-exact — it is pure arithmetic on
+  //    small integers.
+  {
+    const buf = allocateBedParticleBuffers(c.n_max);
+    const nAlloc = initializeBedParticlesFromAlphaS(
+      buf, f(c.alpha_s), c.rho_b_dry, c.moisture_frac, c.T_amb,
+      c.dx, c.dy, f(c.dz_arr), c.n_z_bed, c.n_per_cell,
+      { ...shape, sav: c.sav },
+    );
+    compareFields(`bed.init.${c.name}`,
+      [['x', buf.x, c.init_x], ['y', buf.y, c.init_y], ['z', buf.z, c.init_z],
+       ['m_solid', buf.m_solid, c.init_m_solid],
+       ['m_water', buf.m_water, c.init_m_water],
+       ['alive', buf.alive, c.init_alive]],
+      XLANG_TOL, `${nAlloc}/${c.n_alloc} particles, ${c.n_per_cell}/cell`);
+  }
+
+  // 2. The step itself. Builds the perturbed mid-fire population from the
+  //    recorded inputs, not from the initialiser, so the two are independent.
+  const mkState = () => ({
+    x: f(c.in_x), y: f(c.in_y), z: f(c.in_z), alive: i32(c.in_alive),
+    m_solid: f(c.in_m_solid), m_water: f(c.in_m_water), m_char: f(c.in_m_char),
+    T_s: f(c.in_T_s), m_water_0: f(c.in_m_water_0), sav: f(c.in_sav),
+    m_char_max: f(c.in_m_char_max),
+  });
+  const mkOut = () => ({
+    S_pyro: new Float64Array(n), S_drying: new Float64Array(n),
+    Q_pyro: new Float64Array(n), Q_drying: new Float64Array(n),
+    Y_F_source: new Float64Array(n), Q_char: new Float64Array(n),
+    Q_smold: new Float64Array(n), Q_g_conv: new Float64Array(n),
+    nAliveOut: new Int32Array(1), nBurnedOut: new Int32Array(1),
+    diagMaxOut: new Float64Array(16),
+  });
+  const par = {
+    dx: c.dx, dy: c.dy, dzArr: f(c.dz_arr), zFace: f(c.z_face),
+    hConv: c.h_conv, rhoSolidTrue: c.rho_solid_true, cpSolid: c.cp_solid,
+    epsSolid: c.eps_solid, tAmb: c.T_amb, viewFactor: c.view_factor,
+    viewFactorGeometric: c.view_factor_geometric, hBed: c.h_bed,
+    kappaBedEff: c.kappa_bed_eff, dt: c.dt,
+    doDrying: true, doPyrolysis: true, doCharOx: true, doSmolder: true,
+    dryingMode: c.drying_mode, charOxFluxCapWm2: c.char_ox_flux_cap,
+    charOxAshExp: c.char_ox_ash_exp, nPerCellForSplit: c.n_per_cell,
+  };
+  const gas = { ...shape, T_g: f(c.T_g), Y_O2: f(c.Y_O2), Q_solid_ext: f(c.Q_solid_ext) };
+
+  const s = mkState();
+  const out = mkOut();
+  stepBedParticles(s, gas, out, par);
+
+  compareFields(`bed.step.${c.name}`,
+    [['T_s', s.T_s, c.out_T_s], ['m_solid', s.m_solid, c.out_m_solid],
+     ['m_water', s.m_water, c.out_m_water], ['m_char', s.m_char, c.out_m_char],
+     ['m_char_max', s.m_char_max, c.out_m_char_max],
+     ['alive', s.alive, c.out_alive],
+     ['S_pyro', out.S_pyro, c.out_S_pyro],
+     ['S_drying', out.S_drying, c.out_S_drying],
+     ['Q_pyro', out.Q_pyro, c.out_Q_pyro],
+     ['Q_drying', out.Q_drying, c.out_Q_drying],
+     ['Y_F_source', out.Y_F_source, c.out_Y_F_source],
+     ['Q_char', out.Q_char, c.out_Q_char],
+     ['Q_smold', out.Q_smold, c.out_Q_smold],
+     ['Q_g_conv', out.Q_g_conv, c.out_Q_g_conv],
+     ['diag', out.diagMaxOut, c.out_diag]],
+    XLANG_TOL,
+    `${c.n_alloc} particles, dry_mode=${c.drying_mode}, ` +
+    `geom_vf=${c.view_factor_geometric}, ash_exp=${c.char_ox_ash_exp}`);
+
+  // The alive/burned tally is an integer count — no tolerance applies, it is
+  // either the same number or the port took a different branch somewhere.
+  check(`bed.counts.${c.name}`,
+    out.nAliveOut[0] === c.out_n_alive && out.nBurnedOut[0] === c.out_n_burned,
+    `alive ${out.nAliveOut[0]}/${c.out_n_alive}, ` +
+    `burned ${out.nBurnedOut[0]}/${c.out_n_burned}`);
+
+  // 3. The two aggregators, on the post-step particle state — same order the
+  //    solver uses, since both feed DOM.
+  const TsGrid = new Float64Array(n).fill(c.T_amb);
+  aggregateParticlesToTsGrid(s.x, s.y, s.z, s.alive, s.m_solid, s.m_water,
+    s.m_char, s.T_s, c.dx, c.dy, f(c.z_face), TsGrid, c.T_amb, shape);
+  const MGrid = new Float64Array(n);
+  aggregateParticlesToMLocalGrid(s.x, s.y, s.z, s.alive, s.m_solid, s.m_water,
+    c.dx, c.dy, f(c.z_face), MGrid, shape);
+  compareFields(`bed.aggregate.${c.name}`,
+    [['T_s_grid', TsGrid, c.out_T_s_grid], ['M_local', MGrid, c.out_M_local]],
+    XLANG_TOL, 'mass-weighted T_s, ratio-of-sums M_local');
+
+  // 4. Horizontal conduction, from the same pinned grid the Python used.
+  const condT = f(c.cond_T_in);
+  const condPartT = f(c.out_T_s);
+  stepHorizontalSolidConductionScatter(
+    s.x, s.y, s.z, s.alive, s.m_solid, s.m_water, s.m_char, condPartT,
+    condT, f(c.alpha_s), c.dx, c.dy, f(c.z_face),
+    c.k_solid, c.rho_solid_true, c.cp_solid, c.n_z_bed, c.dt, shape);
+  compareFields(`bed.conduction.${c.name}`,
+    [['T_s_grid', condT, c.cond_T_out],
+     ['part_T_s', condPartT, c.cond_part_T_out]],
+    XLANG_TOL, `k_solid=${c.k_solid} W/m/K, ${c.n_z_bed} bed layers`);
+}
+
 // ── Rule #17 within the port: every kernel, twice, bit-identical ──────────
 {
   const f = (a) => Float64Array.from(a);
@@ -490,6 +605,42 @@ for (const c of G.dom.cases) {
       { extinctionEnable: ed.extinction_enable, sStoich: ed.s_stoich,
         hocJ: ed.hoc_J });
     return [Tg, Yf, YO2, om];
+  });
+
+  const bd = G.lagrangian_bed.cases[0];
+  checkDeterminism('bed.stepBedParticles', () => {
+    const n = bd.nz * bd.ny * bd.nx;
+    const s = {
+      x: f(bd.in_x), y: f(bd.in_y), z: f(bd.in_z),
+      alive: Int32Array.from(bd.in_alive),
+      m_solid: f(bd.in_m_solid), m_water: f(bd.in_m_water),
+      m_char: f(bd.in_m_char), T_s: f(bd.in_T_s),
+      m_water_0: f(bd.in_m_water_0), sav: f(bd.in_sav),
+      m_char_max: f(bd.in_m_char_max),
+    };
+    const out = {
+      S_pyro: new Float64Array(n), S_drying: new Float64Array(n),
+      Q_pyro: new Float64Array(n), Q_drying: new Float64Array(n),
+      Y_F_source: new Float64Array(n), Q_char: new Float64Array(n),
+      Q_smold: new Float64Array(n), Q_g_conv: new Float64Array(n),
+      nAliveOut: new Int32Array(1), nBurnedOut: new Int32Array(1),
+      diagMaxOut: new Float64Array(16),
+    };
+    stepBedParticles(s,
+      { nx: bd.nx, ny: bd.ny, nz: bd.nz, T_g: f(bd.T_g), Y_O2: f(bd.Y_O2),
+        Q_solid_ext: f(bd.Q_solid_ext) },
+      out,
+      { dx: bd.dx, dy: bd.dy, dzArr: f(bd.dz_arr), zFace: f(bd.z_face),
+        hConv: bd.h_conv, rhoSolidTrue: bd.rho_solid_true,
+        cpSolid: bd.cp_solid, epsSolid: bd.eps_solid, tAmb: bd.T_amb,
+        viewFactor: bd.view_factor,
+        viewFactorGeometric: bd.view_factor_geometric,
+        hBed: bd.h_bed, kappaBedEff: bd.kappa_bed_eff, dt: bd.dt,
+        doDrying: true, doPyrolysis: true, doCharOx: true, doSmolder: true,
+        dryingMode: bd.drying_mode, charOxFluxCapWm2: bd.char_ox_flux_cap,
+        charOxAshExp: bd.char_ox_ash_exp, nPerCellForSplit: bd.n_per_cell });
+    return [s.T_s, s.m_solid, s.m_water, s.m_char, out.S_pyro, out.Q_g_conv,
+            out.diagMaxOut];
   });
 }
 

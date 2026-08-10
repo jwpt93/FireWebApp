@@ -86,10 +86,10 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `turbulence_3d` (k-ε subset) | 560 | **done** — bit-exact / 1 ulp |
 | ~~`pyrolysis_3d`~~ | ~~614~~ | **NOT NEEDED** — see below |
 | `dom_3d` (DOM radiation) | 473 | **done** — ~1e-13 |
-| `lagrangian_bed_3d` | 1,070 | to do — **required**, see below |
+| `lagrangian_bed_3d` | 1,070 | **done** — init/conduction bit-exact, step ~1e-15 |
 | `spread_3d` main loop | — | to do |
 
-**2,810 of ~4,900 done (57%).**
+**3,880 of ~4,900 done (79%).** Every kernel is ported; only the main loop remains. 61/61 kernel checks pass.
 
 ### `pyrolysis_3d` drops out entirely (614 lines)
 
@@ -270,6 +270,26 @@ production fidelity, `Cut4_U1` alone is 2.6 h), a Rule #16 regression, and a
 3D spot-check. Script is resumable:
 `unitiedmodel2/scripts/run_2d_nsub_validation.py`.
 
+### 7.5 Out-of-domain particles are placed, not rejected
+
+`step_horizontal_solid_conduction_scatter`, `aggregate_particles_to_T_s_grid`
+and `aggregate_particles_to_M_local_grid` all compute the column index as
+`int(part_x[p] / dx)` and only afterwards test `i < 0`. Python's `int()`
+truncates toward zero, so a particle at `x = -0.4*dx` gets `i = 0` and passes
+the test — its mass and temperature are deposited into the west edge column
+rather than being skipped.
+
+`locate_cell`, used by `step_bed_particles` itself, guards `x < 0.0` first and
+does not have the problem, so the main step is fine. Only the three scatter /
+aggregate kernels are affected, and only for particles within one cell width
+outside the west or south face.
+
+Impact is probably nil in production — bed particles are stationary and are
+initialised strictly inside the domain, so nothing ever reaches negative x.
+It would bite the moment bed particles are given motion, or if a moisture-jump
+zone ever places one off-grid. A one-line `if (part_x[p] < 0.0) continue`
+in each of the three would close it.
+
 ### 7.4 Validation fidelity ≠ applet fidelity
 
 Worth remembering when a run seems inexplicably slow. Production mesh follows
@@ -299,8 +319,27 @@ because below U₁₀ = 3.5 the applet uses the Cheney fit rather than the solve
 3. **`pyrolysis_3d`** (614) — feeds `Q_pyro` into coupling.
 4. **`radiation_3d`** (578) — DOM; the only one with a non-local stencil, so
    expect it to be the awkward one.
-5. **`lagrangian_bed_3d`** (1,070) — largest, and particle-based rather than
-   field-based, so the vector format will need extending.
+5. ~~`lagrangian_bed_3d`~~ — **done.** Largest of them, and the only
+   particle-based one, so the vector format grew a flat per-slot array
+   convention alongside the (Nz,Ny,Nx) fields. Four kernels: the initialiser,
+   `step_bed_particles`, the two grid aggregators, and horizontal conduction.
+   The initialiser and the conduction scatter came out **bit-exact** — they
+   are pure arithmetic with no transcendentals. The step lands at ~1e-15,
+   which is `exp`/`pow` in the Arrhenius terms and nothing more.
+
+   Three things needed care:
+   - `T_s**4` in the radiative-loss diagnostic is float**INT, which numba
+     lowers to multiplies. Written out as `Ts2*Ts2`. The Newton loop already
+     used explicit multiplies and needed no change. Same gotcha as §5.
+   - `Y_O2 ** N_O2_OP` and the ash-coverage `burn_frac ** exp` are
+     float**float and *do* go through `pow` — `Math.pow` is right for those.
+     The rule is per-expression, not per-file.
+   - `int(x/dx)` truncates toward zero, so `int(-0.5)` is `0`, not `-1`.
+     `Math.trunc`, never `Math.floor`. It matters: the scatter and aggregate
+     kernels index with `int()` *before* testing `i < 0`, so a particle just
+     outside the west edge lands in column 0 instead of being rejected. That
+     is very likely an upstream latent bug — logged at §7.5, reproduced here
+     rather than silently fixed, per the faithfulness rule in §4.
 6. **Main loop** — operator-split ordering from `spread_3d.py`. Worth doing
    last and worth reading `spread_3d.py` end to end first; the ordering of the
    substep block is load-bearing.

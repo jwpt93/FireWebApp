@@ -87,9 +87,32 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | ~~`pyrolysis_3d`~~ | ~~614~~ | **NOT NEEDED** — see below |
 | `dom_3d` (DOM radiation) | 473 | **done** — ~1e-13 |
 | `lagrangian_bed_3d` | 1,070 | **done** — init/conduction bit-exact, step ~1e-15 |
-| `spread_3d` main loop | — | to do |
+| `projection_3d` (fft_pcg path) | 450 of 948 | **done** — operator 1e-14, same residual |
+| `flame_front_3d` (level set + v_n) | ~500 of 835 | to do |
+| `soil_3d` | 153 | to do |
+| `combustion_3d` (O2 supply only) | 66 of 251 | to do |
+| `momentum_3d.apply_outflow_sponge` | 30 | to do |
+| `turbulence_3d.apply_wall_function` | 60 | to do |
+| `spread_3d` BC + advection helpers | 130 | to do |
+| `spread_3d` main loop | ~800 | to do |
 
-**3,880 of ~4,900 done (79%).** Every kernel is ported; only the main loop remains. 61/61 kernel checks pass.
+**4,330 of ~6,100 done (71%).** 65/65 kernel checks pass.
+
+### The ~4,900 estimate was wrong — it is ~6,100
+
+The original scope count enumerated the modules with *kernels I had already
+identified from the profile*. Reading the main loop end to end surfaced six
+more it calls that no profile entry named, because they are cheap per call:
+the projection wrapper around the FFT solver, the level-set front and its v_n
+driver, soil conduction, the O2-supply rate, the outflow sponge, and the k-e
+wall function. Plus three helpers that live in `spread_3d.py` itself rather
+than in `physics_3d/` — velocity BCs, gas-energy advection, front tracking —
+so they never appeared in a module listing.
+
+None of it changes the approach; it is about 1,200 lines more than budgeted.
+Worth recording as a lesson: **profile weight is not a scope estimate.** A
+kernel that is 0.3% of runtime is still 100% required, and the cheap ones are
+exactly the ones a profile-driven survey misses.
 
 ### `pyrolysis_3d` drops out entirely (614 lines)
 

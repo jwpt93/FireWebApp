@@ -58,6 +58,7 @@ import {
   stepBedParticles, aggregateParticlesToTsGrid,
   aggregateParticlesToMLocalGrid, stepHorizontalSolidConductionScatter,
 } from './js/physics/lagrangianBed.js';
+import { ProjectionSolver3D } from './js/physics/projection.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -377,6 +378,57 @@ for (const c of G.dom.cases) {
     XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, S4/24 ordinates, source-iterated`);
 }
 
+// ── Pressure projection ───────────────────────────────────────────────────
+// Three checks at two different standards -- see vec_projection() for why the
+// projection result is judged on residual rather than elementwise.
+for (const c of G.projection.cases) {
+  const f = (a) => Float64Array.from(a);
+  const sol = new ProjectionSolver3D({
+    nz: c.nz, ny: c.ny, nx: c.nx, dx: c.dx, dy: c.dy,
+    dzArr: f(c.dz_arr), dFaceAbove: f(c.d_face_above),
+    dFaceBelow: f(c.d_face_below), method: 'fft_pcg', cgRtol: c.cg_rtol,
+  });
+  sol.setInletBC(f(c.u_inlet));
+  sol.rebuildForRho(f(c.rho));
+
+  // 1. The operator. Seven stencil arrays here against a scipy CSR matrix
+  //    there -- same star, different storage.
+  const probe = f(c.probe);
+  const mv = new Float64Array(probe.length);
+  sol.matvec(probe, mv);
+  compareFields(`projection.matvec.${c.name}`,
+    [['A_x', mv, c.matvec_out]], XLANG_TOL,
+    '7-point variable-density operator vs scipy CSR');
+
+  // 2. The divergence stencil, with its mirror ghosts at inlet and wall.
+  const u = f(c.u_in), v = f(c.v_in), w = f(c.w_in);
+  const div = sol.divergence(u, v, w).slice();
+  compareFields(`projection.divergence.${c.name}`,
+    [['div', div, c.div_out]], XLANG_TOL, 'FV divergence, mirror ghost BCs');
+
+  // 3. Did the projection do its job? Both codes must drive
+  //    max|div(u_new) - div_target| to the same smallness. They will not
+  //    agree on p -- two Krylov solves stopped at the same relative residual
+  //    sit in the same ball, not on the same point.
+  const dTarget = f(c.div_target);
+  sol.project(u, v, w, f(c.rho), c.dt, dTarget);
+  const after = sol.divergence(u, v, w);
+  let resid = 0;
+  for (let i = 0; i < after.length; i++) {
+    resid = Math.max(resid, Math.abs(after[i] - dTarget[i]));
+  }
+  // Allow 10x the reference residual: a different Krylov path lands at a
+  // different point inside the same tolerance ball, and the div residual is
+  // the amplified image of that. An order of magnitude is generous enough not
+  // to be flaky and tight enough that a real ordering bug -- which would move
+  // this by many orders -- still fails.
+  const budget = Math.max(10.0 * c.proj_resid, 1e-9);
+  check(`projection.project.${c.name}`, resid <= budget,
+    `max|div-target| ${resid.toExponential(2)} vs ref ` +
+    `${c.proj_resid.toExponential(2)} (budget ${budget.toExponential(2)}), ` +
+    `${sol.lastIters} BiCGSTAB iters vs ref ${c.n_iters}`);
+}
+
 // ── Lagrangian bed particles ──────────────────────────────────────────────
 // Four kernels, checked in the order the solver calls them. The vectors carry
 // flat per-slot particle arrays rather than (Nz,Ny,Nx) fields, so this block
@@ -605,6 +657,20 @@ for (const c of G.lagrangian_bed.cases) {
       { extinctionEnable: ed.extinction_enable, sStoich: ed.s_stoich,
         hocJ: ed.hoc_J });
     return [Tg, Yf, YO2, om];
+  });
+
+  const pj = G.projection.cases[0];
+  checkDeterminism('projection.project', () => {
+    const sol = new ProjectionSolver3D({
+      nz: pj.nz, ny: pj.ny, nx: pj.nx, dx: pj.dx, dy: pj.dy,
+      dzArr: f(pj.dz_arr), dFaceAbove: f(pj.d_face_above),
+      dFaceBelow: f(pj.d_face_below), method: 'fft_pcg', cgRtol: pj.cg_rtol,
+    });
+    sol.setInletBC(f(pj.u_inlet));
+    sol.rebuildForRho(f(pj.rho));
+    const u = f(pj.u_in), v = f(pj.v_in), w = f(pj.w_in);
+    const p = sol.project(u, v, w, f(pj.rho), pj.dt, f(pj.div_target));
+    return [u, v, w, p.slice()];
   });
 
   const bd = G.lagrangian_bed.cases[0];

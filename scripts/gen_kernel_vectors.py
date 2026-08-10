@@ -769,6 +769,90 @@ def vec_lagrangian_bed():
     return {"cases": cases}
 
 
+def vec_projection():
+    """ProjectionSolver3D, fft_pcg method — the Chorin fractional step.
+
+    Three separate things get checked, because they have three different
+    standards of agreement:
+
+      1. THE OPERATOR. The JS keeps seven stencil arrays where the Python
+         builds a scipy CSR matrix. Same 7-point star, different storage, so
+         A @ x must agree — recorded here as `matvec_out` on a shaped probe
+         vector. This one should be tight.
+
+      2. THE DIVERGENCE. `_divergence_compatible` is an explicit stencil with
+         mirror ghost reflection at the inlet and the wall. Tight too.
+
+      3. THE PROJECTION RESULT. NOT compared elementwise. scipy's BiCGSTAB
+         and the ported one are both stopped at cg_rtol and legitimately
+         return different vectors inside that ball — comparing p or u
+         directly would be testing which Krylov path was taken, not whether
+         the projection worked. What is recorded instead is the thing the
+         projection is *for*: the divergence of the corrected velocity minus
+         the target. The JS has to drive that to the same smallness.
+
+    Ny = 1 only: the FFT preconditioner's y-transform is the identity for a
+    single cell, and poisson.js is ported for that case alone.
+    """
+    from model_outdoor.physics_3d.projection_3d import ProjectionSolver3D
+
+    cases = []
+    for name, nz, ny, nx in [("slab2d", 12, 1, 16)]:
+        st = make_state(nz, ny, nx, seed=1013)
+        r = np.random.default_rng(24601)
+        # Density contrast like a real fire: cold ambient with a hot plume
+        # column, so the variable-coefficient operator is genuinely variable
+        # rather than a near-constant one the preconditioner inverts exactly.
+        rho = np.ascontiguousarray(0.30 + 0.95 * r.random((nz, ny, nx)))
+        u = st["u"].copy(); v = st["v"].copy(); w = st["w"].copy()
+        u_in = np.ascontiguousarray(2.0 + 0.5 * r.random((nz, ny)))
+        # A pyrolysis-like mass source in the lower cells only.
+        div_target = np.zeros((nz, ny, nx))
+        div_target[: max(nz // 3, 1)] = 0.6 * r.random((max(nz // 3, 1), ny, nx))
+
+        sol = ProjectionSolver3D(
+            nz, ny, nx, st["dy"], st["dx"], st["dz_arr"],
+            st["d_face_above"], st["d_face_below"],
+            y_bc="periodic", method="fft_pcg", cg_rtol=1.0e-6,
+        )
+        sol.set_inlet_BC(u_in)
+        sol.rebuild_for_rho(rho)
+
+        # (1) operator probe
+        probe = np.ascontiguousarray(
+            np.sin(3.0 * np.arange(nz * ny * nx, dtype=np.float64) / (nz * nx))
+            + 0.4 * r.random(nz * ny * nx))
+        matvec_out = (sol._A @ probe)
+
+        # (2) divergence on the pre-projection field
+        div_in = sol.divergence(u, v, w).copy()
+
+        # (3) project, then measure how well the target was met
+        u_out = u.copy(); v_out = v.copy(); w_out = w.copy()
+        sol.project(u_out, v_out, w_out, rho, 2.0e-3, div_target=div_target)
+        div_after = sol.divergence(u_out, v_out, w_out)
+        resid = float(np.max(np.abs(div_after - div_target)))
+
+        cases.append({
+            "name": name, "nz": nz, "ny": ny, "nx": nx,
+            "dx": st["dx"], "dy": st["dy"], "dt": 2.0e-3, "cg_rtol": 1.0e-6,
+            "dz_arr": st["dz_arr"].tolist(),
+            "d_face_above": st["d_face_above"].tolist(),
+            "d_face_below": st["d_face_below"].tolist(),
+            "rho": rho.ravel().tolist(),
+            "u_in": u.ravel().tolist(), "v_in": v.ravel().tolist(),
+            "w_in": w.ravel().tolist(),
+            "u_inlet": u_in.ravel().tolist(),
+            "div_target": div_target.ravel().tolist(),
+            "probe": probe.tolist(),
+            "matvec_out": matvec_out.tolist(),
+            "div_out": div_in.ravel().tolist(),
+            "proj_resid": resid,
+            "n_iters": int(getattr(sol, "_last_fft_pcg_iters", -1)),
+        })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -792,6 +876,7 @@ def main() -> None:
         "kepsilon": vec_kepsilon(),
         "dom": vec_dom(),
         "lagrangian_bed": vec_lagrangian_bed(),
+        "projection": vec_projection(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -799,6 +884,10 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["projection"]["cases"]:
+        print(f"  proj:    {c['name']:8s} {c['nz']}x{c['ny']}x{c['nx']}, "
+              f"BiCGSTAB {c['n_iters']} iters, "
+              f"max|div-target| after = {c['proj_resid']:.3e}")
     for c in payload["lagrangian_bed"]["cases"]:
         print(f"  bed:     {c['name']:18s} {c['n_alloc']:4d} particles, "
               f"{c['out_n_alive']} alive / {c['out_n_burned']} burned, "

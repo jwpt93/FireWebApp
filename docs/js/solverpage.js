@@ -68,6 +68,27 @@ const BASE = {
   // The SOLVER's own default stays at 10, faithful to upstream. This is the
   // applet making an explicit, measured choice.
   nSub: 1,
+  // Projection inner tolerance 1e-4, not the upstream 1e-6.
+  //
+  // The Krylov solve feeds an OUTER loop that iterates on the actual
+  // divergence residual to projDivTol = 1e-3. An inner tolerance three orders
+  // tighter than the thing consuming it is resolving detail that gets thrown
+  // away. Measured, 12 m / dx 0.10, ROS identical to 4 decimals throughout:
+  //
+  //   rtol    ms/step   projection   proj iters   div residual
+  //   1e-6     16.4       10.06         1.00        6.1e-6
+  //   1e-5     13.9        7.58         1.00        5.9e-5
+  //   1e-4     11.7        5.23         1.00        5.7e-4
+  //   1e-3     34.2       21.68         1.71        1.0e-3   <- cliff
+  //
+  // There is a cliff, not a gradient. Past ~3e-4 the divergence residual
+  // reaches projDivTol and the outer loop needs a SECOND projection, which
+  // costs far more than the loosened inner tolerance saved. 1e-4 keeps about
+  // 2x margin to it. If a stiffer case ever crosses anyway the failure is
+  // graceful -- an extra outer iteration, so slower, not wrong.
+  //
+  // As with nSub, the SOLVER's own default stays at the upstream 1e-6.
+  projectionCgRtol: 1.0e-4,
 };
 
 let worker = null;

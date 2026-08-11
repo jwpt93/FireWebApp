@@ -94,9 +94,10 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `momentum_3d.apply_outflow_sponge` | 30 | **done** — bit-exact |
 | `turbulence_3d.apply_wall_function` | 60 | **done** — bit-exact |
 | `spread_3d` BC + advection helpers | 130 | **done** — bit-exact |
+| `mesh` + `Grid3D.build` (both branches) | 300 | **done** — bit-exact |
 | `spread_3d` main loop | ~800 | to do |
 
-**5,270 of ~6,100 done (86%).** 102/102 kernel checks pass. Only the main loop is left.
+**5,570 of ~6,400 done (87%).** 106/106 kernel checks pass. Only the main loop is left.
 
 ### The ~4,900 estimate was wrong — it is ~6,100
 
@@ -327,6 +328,53 @@ initialised strictly inside the domain, so nothing ever reaches negative x.
 It would bite the moment bed particles are given motion, or if a moisture-jump
 zone ever places one off-grid. A one-line `if (part_x[p] < 0.0) continue`
 in each of the three would close it.
+
+### 7.6 `atm_growth` / `atm_max_dz` are inert in every production deck
+
+`Grid3D.build` dispatches on whether any boundary-layer cell count is nonzero:
+
+```python
+use_new_kernel = (wall_bl_N > 0 or bed_top_inner_bl_N > 0 or bed_top_outer_bl_N > 0)
+```
+
+Only the new-kernel branch reads `atm_growth` and `atm_max_dz`. The legacy
+branch builds its buffer from `dz_expansion` (default **1.0** — uniform) and
+never looks at either.
+
+**All 22 decks that set `atm_growth`/`atm_max_dz` also set `wall_bl_N = 0`**,
+so in every one of them those two parameters do nothing.
+
+For `Outdoor_Cheney_Cut4_U0p5__scout.txt`, which asks for an atmosphere
+growing at 1.20 to a 1.0 m cap:
+
+| | Nz | atmosphere aloft | cells |
+|---|---|---|---|
+| what the deck gets | **320** | uniform 25 mm to z = 8 m | 384,000 |
+| what its own atm settings would give | **26** | grows to 1.0 m | 31,200 |
+
+The bed is identical either way — 4 cells at 25 mm. The entire difference is
+resolution in the air above the fire, where 25 mm cells at 7 m altitude are
+not resolving anything. That is a **12.3x** factor on Nz and therefore on
+every kernel in the loop.
+
+I have NOT changed this, and it should not be changed without a regression run
+— a mesh change is exactly the kind of thing CLAUDE.md Rule #16 exists for
+(re-run the recent validation set before committing physics changes, because
+shared-kernel edits routinely move cases beyond the one being fixed). It is
+possible the fine uniform mesh is load-bearing for plume behaviour in a way
+the deck author discovered and the parameters are vestigial. But it is equally
+possible this is 12x of wasted compute across every outdoor sweep ever run,
+and nobody has looked.
+
+It is also directly relevant to this port: **384,000 cells is not going to run
+in a browser.** The applet will need either the growing atmosphere or a lower
+Lz, and that choice needs the regression run behind it.
+
+Related in spirit to CLAUDE.md Rule #11 (no silent parameter effects — any
+parameter that materially affects physics must be explicitly set in the deck).
+This is the mirror image: parameters explicitly set in the deck that silently
+affect nothing. The rule protects against relying on defaults; nothing
+currently protects against a deck line that is quietly ignored.
 
 ### 7.4 Validation fidelity ≠ applet fidelity
 

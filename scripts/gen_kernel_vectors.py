@@ -1104,6 +1104,49 @@ def vec_support():
     return {"cases": cases}
 
 
+def vec_mesh():
+    """Grid3D.build, BOTH dispatch branches.
+
+    The legacy branch is the one production actually takes (every deck sets
+    wall_bl_N = 0), and it ignores atm_growth / atm_max_dz. The segment branch
+    is exercised too so the port does not rot if a deck ever enables a BL.
+
+    Both are recorded from the same nominal Cheney Cut-4 geometry so the
+    12.3x difference in Nz is visible side by side rather than as two
+    unrelated numbers.
+    """
+    from model_outdoor.spread_3d import Grid3D
+
+    common = dict(Lx=12.0, Ly=0.5, Lz=8.0, dx=0.05, dy=0.10,
+                  h_bed=0.10, n_z_bed=4)
+    cases = []
+    for name, extra in [
+        ("legacy_cheney_cut4", dict(atm_growth=1.20, atm_max_dz=1.0,
+                                    wall_bl_N=0, wall_bl_first_dz=0.0)),
+        ("legacy_stretched_bed", dict(dz_first=0.010, bl_growth=1.3,
+                                      dz_expansion=1.15)),
+        ("segment_wall_bl", dict(wall_bl_N=1, wall_bl_first_dz=0.025,
+                                 wall_bl_growth=1.0, atm_growth=1.20,
+                                 atm_max_dz=1.0)),
+        ("segment_outer_bl", dict(bed_top_outer_bl_N=4,
+                                  bed_top_outer_bl_first_dz=0.01,
+                                  bed_top_outer_bl_growth=1.2,
+                                  atm_growth=1.25, atm_max_dz=0.5)),
+    ]:
+        g = Grid3D.build(**common, **extra)
+        cases.append({
+            "name": name, "args": {**common, **extra},
+            "nx": g.Nx, "ny": g.Ny, "nz": g.Nz, "n_z_bed": g.n_z_bed,
+            "dx": g.dx, "dy": g.dy, "dz": g.dz, "Lz_actual": g.Lz,
+            "dz_arr": g.dz_arr.tolist(), "z_face": g.z_face.tolist(),
+            "z_mid": g.z_mid.tolist(), "x_mid": g.x_mid.tolist(),
+            "y_mid": g.y_mid.tolist(),
+            "d_face_above": g.d_face_above.tolist(),
+            "d_face_below": g.d_face_below.tolist(),
+        })
+    return {"cases": cases}
+
+
 def main() -> None:
     payload = {
         "_meta": {
@@ -1130,6 +1173,7 @@ def main() -> None:
         "projection": vec_projection(),
         "flame_front": vec_flame_front(),
         "support": vec_support(),
+        "mesh": vec_mesh(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload))
@@ -1137,6 +1181,9 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.1f} kB)")
     print(f"  muscl:   {len(payload['muscl']['cases'])} field cases "
           f"({n} values), {len(payload['muscl']['helpers'])} scalar probes")
+    for c in payload["mesh"]["cases"]:
+        print(f"  mesh:    {c['name']:22s} Nz={c['nz']:4d}  n_z_bed={c['n_z_bed']}  "
+              f"Lz={c['Lz_actual']:.4f}  dz_top={c['dz_arr'][-1]:.4f}")
     for c in payload["support"]["cases"]:
         print(f"  support: {c['name']:8s} sponge skips {c['n_sponge_skipped']} "
               f"flame cells, {c['n_wf_bed']} bed columns skip the wall fn, "

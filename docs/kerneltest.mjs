@@ -68,6 +68,7 @@ import {
   applyOutflowSponge, applyWallFunction, stepO2SupplyRate,
   buildSoilGrid, stepSoilConduction, advGasEnergy,
 } from './js/physics/support.js';
+import { buildGrid3D } from './js/physics/mesh.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const G = JSON.parse(readFileSync(join(HERE, 'data', 'kernel_vectors.json'), 'utf8'));
@@ -385,6 +386,38 @@ for (const c of G.dom.cases) {
     [['q_solid', qs, c.q_rad_solid], ['q_gas', qg, c.q_rad_gas],
      ['q_soil', qsoil, c.q_in_soil]],
     XLANG_TOL, `${c.nz}x${c.ny}x${c.nx}, S4/24 ordinates, source-iterated`);
+}
+
+// ── Vertical mesh ─────────────────────────────────────────────────────────
+// Both dispatch branches. The legacy one is what production takes; the
+// segment one is checked so it does not rot before a deck enables a BL.
+// NOTE the A-Z in the class: `wall_bl_N` ends in an uppercase letter, and a
+// lowercase-only pattern leaves it as `wallBl_N`, which buildGrid3D ignores --
+// so the segment cases silently fell through to the legacy branch and built a
+// 320-cell mesh. The shape assertion caught it.
+const camel = (s) => s.replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
+for (const c of G.mesh.cases) {
+  const a = {};
+  for (const [k, v] of Object.entries(c.args)) a[camel(k)] = v;
+  a.hBed = c.args.h_bed; a.nZBed = c.args.n_z_bed;
+  const g = buildGrid3D(a);
+  const okShape = g.nx === c.nx && g.ny === c.ny && g.nz === c.nz
+               && g.nZBed === c.n_z_bed;
+  if (!okShape) {
+    check(`mesh.${c.name}`, false,
+      `shape ${g.nz}x${g.ny}x${g.nx} nZBed=${g.nZBed}, want ` +
+      `${c.nz}x${c.ny}x${c.nx} nZBed=${c.n_z_bed}`);
+  } else {
+    compareFields(`mesh.${c.name}`,
+      [['dz_arr', g.dzArr, c.dz_arr], ['z_face', g.zFace, c.z_face],
+       ['z_mid', g.zMid, c.z_mid], ['x_mid', g.xMid, c.x_mid],
+       ['y_mid', g.yMid, c.y_mid],
+       ['d_face_above', g.dFaceAbove, c.d_face_above],
+       ['d_face_below', g.dFaceBelow, c.d_face_below]],
+      XLANG_TOL,
+      `Nz=${g.nz}, n_z_bed=${g.nZBed}, Lz=${g.Lz.toFixed(4)}, ` +
+      `dz_top=${g.dzArr[g.nz - 1].toFixed(4)} m`);
+  }
 }
 
 // ── Loop-support kernels ──────────────────────────────────────────────────

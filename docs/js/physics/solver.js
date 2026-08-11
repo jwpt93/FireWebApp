@@ -398,6 +398,16 @@ export function runSpread3D(cfg, onStep = null) {
     Math.min((0.25 * dzMin * dzMin) / Math.max(0.01, 1.0e-3), 0.05));
   if (dt <= 0.0) throw new Error(`computed dt=${dt} <= 0 (check CFL params)`);
 
+  // Optional per-stage timing. Off by default -- the clock calls are cheap but
+  // not free, and this is a diagnostic, not part of the solve. Enabled with
+  // cfg.profile = true; the totals come back on the result as `timings`.
+  const prof = cfg.profile ? Object.create(null) : null;
+  const now = (typeof performance !== 'undefined' && performance.now)
+    ? () => performance.now() : () => Number(process.hrtime.bigint()) / 1e6;
+  let _tm = 0;
+  const tic = prof ? () => { _tm = now(); } : () => {};
+  const toc = prof ? (k) => { prof[k] = (prof[k] || 0) + (now() - _tm); } : () => {};
+
   let t = 0.0;
   let step = 0;
   let vnExtinctCount = 0;
@@ -515,6 +525,7 @@ export function runSpread3D(cfg, onStep = null) {
       }
     }
 
+    tic();
     stepBedParticles(bed,
       { ...shape, T_g: state.T_g, Y_O2: state.Y_O2, Q_solid_ext: bedQsx },
       { S_pyro: bedSp, S_drying: bedSd, Q_pyro: bedQp, Q_drying: bedQd,
@@ -535,6 +546,7 @@ export function runSpread3D(cfg, onStep = null) {
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
         nPerCellForSplit: lagrangianBedNPerCell });
+    toc('bed');
 
     // S_pyro drives the projection's mass source, so it is volatile + vapour.
     // Y_fuel's source is volatile ONLY -- see step 12.
@@ -556,13 +568,17 @@ export function runSpread3D(cfg, onStep = null) {
       nZB, dt, shape);
 
     // 3. Drag
+    tic();
     stepDragForce(state.u, state.v, state.w, state.rho, state.alpha_s,
       sigmaSav, Fx, Fy, Fz, canopyCd);
+    toc('drag');
 
     // 4. Tentative momentum
+    tic();
     stepTentativeVelocity(state.u, state.v, state.w, state.rho, state.T_g,
       Fx, Fy, Fz, dt, grid.dx, grid.dy, grid.dzArr,
       grid.dFaceAbove, grid.dFaceBelow, TAmb, uInlet, vInlet, wInlet, shape);
+    toc('momentum');
 
     // 5. Projection. div_target = (S_pyro - drho_dt)/rho: the low-Mach mass
     //    source. Without the S_pyro term a strict-incompressible projection
@@ -575,6 +591,7 @@ export function runSpread3D(cfg, onStep = null) {
       const drhoDt = (state.rho[c] - rhoPrev[c]) / dt;
       divTarget[c] = (SPyro[c] - drhoDt) / Math.max(state.rho[c], 0.1);
     }
+    tic();
     proj.rebuildForRho(state.rho);
     let projDivMax = 0.0;
     let projNIter = 0;
@@ -593,6 +610,7 @@ export function runSpread3D(cfg, onStep = null) {
       projNIter = it + 1;
       if (projDivMax < projDivTol) break;
     }
+    toc('projection');
 
     // 6. Outflow sponge
     applyOutflowSponge(state.u, uInlet, sigmaXSponge, state.Y_fuel,
@@ -605,10 +623,12 @@ export function runSpread3D(cfg, onStep = null) {
       applyWallFunction(state.u, state.v, state.rho, state.alpha_s, grid.dzArr,
         kWallGhost, epsWallGhost, { ...shape, kMin: K_MIN, epsMin: EPS_MIN });
     }
+    tic();
     stepKEpsilon(kTurb, epsTurb, nuT, state.u, state.v, state.w, state.T_g,
       state.rho, state.alpha_s, sigmaSav, dt, grid.dx, grid.dy, grid.dzArr,
       grid.dFaceAbove, grid.dFaceBelow, TAmb, SMag2, OmegaMag2, uInlet,
       kWallGhost, epsWallGhost, canopyBetaP, canopyBetaD, shape);
+    toc('kepsilon');
     // tau_mix has NO upper bound, deliberately. Capping it (the old 1.0 s
     // limit) is non-standard against M&H 1977 / FDS / FireFOAM, which let it
     // grow without limit in laminar zones so omega_EBU falls to zero there and
@@ -624,6 +644,7 @@ export function runSpread3D(cfg, onStep = null) {
     //    advection, so solving every K steps and reusing the cached arrays is
     //    standard (FDS Tech Ref Vol.1 §6.2; Howell 2010 §17). At K=5 radiation
     //    drops from 25% of the loop to about 5%.
+    tic();
     if (step % Math.max(domSubcycleEvery, 1) === 0) {
       aggregateParticlesToMLocalGrid(bed.x, bed.y, bed.z, bed.alive,
         bed.m_solid, bed.m_water, grid.dx, grid.dy, grid.zFace, bedMLocal, shape);
@@ -638,6 +659,7 @@ export function runSpread3D(cfg, onStep = null) {
     }
     stepSoilConduction(TSoil, qInSoil, dt, soil.soilDz, soil.dAbove, soil.dBelow,
       { nx, ny, nSoil: N_SOIL, Tamb: TAmb });
+    toc('radiation+soil');
 
     // 9. Ignition pulse as an external FLUX on the top bed layer, not a T_s
     //    clamp. Quintiere (2006) §7.4: piloted ignition is a fixed external
@@ -660,6 +682,7 @@ export function runSpread3D(cfg, onStep = null) {
     // (more atm cells per column at finer meshes = more contributions). Mask
     // above the bed top so q_in stays a bed-only integral.
     for (let k = nZB; k < nz; k++) aheadBand.fill(0, k * nxy, (k + 1) * nxy);
+    tic();
     const phiFlame = computePhiFlameFromState(omega, state.T_g, state.Y_fuel,
       grid.dx, grid.dy, grid.dzArr, shape);
     const flameBody = flameBodyMaskFromPhiFlame(phiFlame, 0.0);
@@ -668,11 +691,14 @@ export function runSpread3D(cfg, onStep = null) {
     // driven by DOM forward intensity alone.
     qFrankman.fill(0.0);
     computeQDomFwdAtBand(radSolver, aheadBand, qDomFwd);
+    toc('levelset_masks');
 
     // 11. Gas-energy advection. The coupling kernel only applies point-wise
     //     sources to T_g; heat has to convect downstream separately.
+    tic();
     advGasEnergy(state.T_g, state.u, state.v, state.w, dt, grid.dx, grid.dy,
       grid.dzArr, grid.dFaceAbove, grid.dFaceBelow, 2.0e-5, TAmb, shape);
+    toc('gas_advection');
 
     // 12. Sub-stepped chemistry + coupling (Strang 1968 splitting). The
     //     combustion source is stiff: at hot T_g with fuel present, Q_comb
@@ -680,6 +706,7 @@ export function runSpread3D(cfg, onStep = null) {
     //     one outer step. Pyrolysis is frozen across the sub-loop (S_pyro is a
     //     rate, already integrated over dt).
     const dtSub = dt / nSub;
+    tic();
     for (let sub = 0; sub < nSub; sub++) {
       // NOT COMPUTED HERE, and that is not an omission.
       //
@@ -820,7 +847,10 @@ export function runSpread3D(cfg, onStep = null) {
       }
     }
 
+    toc('substep_loop');
+
     // 13. Level-set evolution.
+    tic();
     updateCellAge(cellAge, flameBody, dt);
     const qIn3d = computeQInAtFront3d(qFrankman, qDomFwd, aheadBand, null, shape);
     if (levelSetPassive) {
@@ -838,6 +868,7 @@ export function runSpread3D(cfg, onStep = null) {
     // a regression: without periodic reinit the float precision drifts even at
     // v_n = 0.
     lset.maybeReinitialize();
+    toc('levelset_evolve');
 
     // 14. EoS, front tracking, exits.
     for (let c = 0; c < n; c++) {
@@ -894,7 +925,7 @@ export function runSpread3D(cfg, onStep = null) {
   const rosMs = computeSteadyRos(frontT, frontX, t,
     (iSrcEnd - iSrcStart) * grid.dx, grid.Lx);
   return {
-    rosMs, rosMMin: rosMs * 60.0,
+    rosMs, rosMMin: rosMs * 60.0, timings: prof,
     frontT, frontX, grid, state, lset, bed,
     steps: step, t, nAlloc,
   };

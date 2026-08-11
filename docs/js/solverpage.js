@@ -55,6 +55,19 @@ const BASE = {
   lagrangianBedNPerCell: 4, lagrangianBedDryingMode: 'combined',
   lagrangianBedHConv: 250.0, lagrangianBedViewFactorGeometric: true,
   domSubcycleEvery: 5, levelSetPassive: true, wallFunction: false,
+  // N_SUB = 1, not the upstream default of 10.
+  //
+  // Upstream notes that N_SUB "has never had a convergence study -- it is a
+  // hardcoded constant justified by splitting theory, not by measurement".
+  // The study was run (scripts/run_2d_nsub_validation.py, 2D production mesh):
+  // six Cheney cases at N_SUB 10 vs 1, worst ROS deviation 1.9% against a 5%
+  // band, all pass. Reproduced independently in this port at -0.01% on a 6 s
+  // run. It is worth 1.78x here -- the chemistry sub-loop drops from 48% of
+  // step time to 8%.
+  //
+  // The SOLVER's own default stays at 10, faithful to upstream. This is the
+  // applet making an explicit, measured choice.
+  nSub: 1,
 };
 
 let worker = null;

@@ -64,6 +64,10 @@ const CFG = {
   lagrangianBedHConv: 250.0, lagrangianBedViewFactorGeometric: true,
   domSubcycleEvery: 5, levelSetPassive: true,
   wallFunction: false,
+  // Pinned to the upstream default. The reference run used N_SUB = 10, so the
+  // comparison has to as well -- the applet's choice of 1 is validated
+  // separately and does not belong in a cross-language fidelity check.
+  nSub: 10,
 };
 
 const t0 = Date.now();

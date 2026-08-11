@@ -91,8 +91,26 @@ export const HOC_J = 17_000_000.0;   // [J/kg]
 export function stepChemistryOdeEdc(
   rho, Tg, Yfuel, YO2, kTurb, epsTurb, chiRad, cpG, dt, nSubsteps,
   omegaIntOut, YH2O,
-  { extinctionEnable = false, sStoich = S_STOICH, hocJ = HOC_J } = {},
+  { extinctionEnable = false, sStoich = S_STOICH, hocJ = HOC_J,
+    laminarFloorSL = 0.0, dxCell = 0.0 } = {},
 ) {
+  // DIAGNOSTIC (default OFF, so the reference behaviour is untouched).
+  //
+  // Magnussen EDC is a HIGH-Damkohler closure: it assumes chemistry is fast and
+  // mixing limits the rate. Its rate scales as eps^1.25 / k^1.5, so as
+  // turbulence vanishes the rate vanishes with it -- gamma* ~ eps^0.75 AND
+  // 1/tau* ~ eps^0.5, a double penalty. The physical limit as turbulence goes
+  // to zero is NOT zero, it is the laminar flame, propagating at S_L.
+  //
+  // This floors the rate at a flame crossing the cell at S_L:
+  //     omega_laminar = rho * Y_lim * S_L / dx
+  // dimensionally identical to the Damkohler cap the loop already builds as an
+  // UPPER bound (and then discards -- SOLVER_PORT.md 7.7).
+  //
+  // Purely a diagnostic to test whether a flame forms at low wind. Not a
+  // proposed closure: a floor that applies everywhere would also raise the rate
+  // at high wind, where the mixing limit is the correct physics.
+  const useLaminarFloor = laminarFloorSL > 0.0 && dxCell > 0.0;
   const nSub = Math.max(nSubsteps, 1);
   const h = dt / nSub;
   const hocEff = hocJ * (1.0 - chiRad);
@@ -149,6 +167,10 @@ export function stepChemistryOdeEdc(
       } else {
         const yLim = Yf < yO2 / sStoich ? Yf : yO2 / sStoich;
         omega = gammaStar * ((rhoI * yLim) / tauStar);
+        if (useLaminarFloor) {
+          const omegaLam = (rhoI * yLim * laminarFloorSL) / dxCell;
+          if (omegaLam > omega) omega = omegaLam;
+        }
 
         // (1) Beyler 1992 water-vapour quench — always on.
         const yH2Osup = YH2O[c];

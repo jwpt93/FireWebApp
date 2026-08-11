@@ -433,6 +433,47 @@ Skipping it cannot change a number — and the integration test agreeing to
 Cheap fix upstream: hoist the three computations inside a
 `if combustion_closure in ("level_set_fsd", "pasr"):` guard.
 
+### 7.8 Four defects in the radiation/reaction coupling (low-wind failure)
+
+Full write-up and measurements in the project memory note
+`lowu_four_defects_radiation_reaction_coupling`. Summary, because these are
+upstream physics issues surfaced by the port and shouldn't live only in a
+memory file:
+
+1. **EDC has no chemistry limb.** Its own docstring says so — *"Magnussen 1981
+   EDC closure (no Arrhenius / cell-T gate, no bootstrap)"*. The rate is
+   `gamma*·rho·Y/tau*` with `gamma* ~ eps^0.75` and `1/tau* ~ eps^0.5`, so
+   `omega ~ u'^0.75` and vanishes with turbulence. The physical limit is not
+   zero, it is the laminar flame at S_L ~ 0.4 m/s. Measured at U=0.5:
+   **zero cells above 1000 K** — no flame exists at all.
+
+2. **The char-ox cap limits mass loss, not just heat release.** It reduces
+   `m_cons_ch` directly, so a particle cannot burn away fast enough to shed
+   energy and holds it as sensible heat instead. T_s reaches 3304 K in tests
+   (grass ash melts ~1500-1700 K).
+
+3. **View-factor attenuation is one-sided.** Emission carries
+   `f_geom = exp(-kappa*(h_bed - z_p))` (~12% for deep particles); absorption
+   carries no depth term at all. Deep particles absorb fully and emit at 12%,
+   so they cannot radiatively self-limit. Kirchhoff reciprocity wants the same
+   factor on both sides.
+
+4. **Emission is double-counted.** `dom_3d` returns
+   `kappa*(G - 4*pi*B)`, which already nets off emission; the bed-particle
+   kernel then applies its own Stefan-Boltzmann loss on top.
+
+And the cap that started the investigation, `Q_RAD_MAX = 1e5 W/m^3`: measured
+q_rad reaches 2.83e7, so it binds at up to **283x** on 8-16% of bed cells. It
+is NOT the cause of the low-wind failure — raising it 100x leaves ROS negative
+and degrades high wind — but it is compensating for defects 2 and 3, which is
+why removing it explodes.
+
+None of this overturns the Phase 18 closure-class conclusion. Those seven
+variants were all heat-TRANSPORT interventions and so was the radiation cap;
+all eight failed because the missing piece is the reaction, not the transport.
+Supplying the reaction (a laminar-propagation floor) does create a flame and
+still does not create spread.
+
 ### 7.4 Validation fidelity ≠ applet fidelity
 
 Worth remembering when a run seems inexplicably slow. Production mesh follows

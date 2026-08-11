@@ -224,6 +224,8 @@ export function runSpread3D(cfg, onStep = null) {
     //
     // Exposed so that hypothesis is testable. Default unchanged.
     qRadMaxBedWm3 = Q_RAD_MAX_BED_DEFAULT,
+    // Diagnostic only -- see edc.js. 0 disables (reference behaviour).
+    laminarFloorSL = 0.0,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -782,7 +784,7 @@ export function runSpread3D(cfg, onStep = null) {
       // spending ~20 full-field passes per step on it.
       stepChemistryOdeEdc(state.rho, state.T_g, state.Y_fuel, state.Y_O2,
         kTurb, epsTurb, chiRad, CP_GAS_DRY, dtSub, 1, omega, state.Y_H2O,
-        shape);
+        { ...shape, laminarFloorSL, dxCell: grid.dx });
       // Chemistry already updated T_g, so Q_comb starts clean.
       QComb.fill(0.0);
 

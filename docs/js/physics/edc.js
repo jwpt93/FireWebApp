@@ -66,6 +66,12 @@ const TAU_WB = 0.5;               // [s] wet-bulb relaxation timescale
 const T_G_CAP = 2400.0;           // [K] adiabatic-ish cap
 
 /** Biomass defaults, from chemistry_closures/_constants.py. */
+/** Arrhenius pre-exponential and activation energy for the volatile-oxidation
+ *  limb. Source of truth: chemistry_closures/_constants.py. */
+export const A_COMB = 1.0e9;        // [1/s]
+export const E_COMB = 84000.0;      // [J/mol]
+export const R_GAS_EDC = 8.314;     // [J/mol/K]
+
 export const S_STOICH = 1.3;
 export const HOC_J = 17_000_000.0;   // [J/kg]
 
@@ -92,8 +98,33 @@ export function stepChemistryOdeEdc(
   rho, Tg, Yfuel, YO2, kTurb, epsTurb, chiRad, cpG, dt, nSubsteps,
   omegaIntOut, YH2O,
   { extinctionEnable = false, sStoich = S_STOICH, hocJ = HOC_J,
-    laminarFloorSL = 0.0, dxCell = 0.0 } = {},
+    laminarFloorSL = 0.0, dxCell = 0.0, chemistryLimb = false,
+    aComb = A_COMB, eComb = E_COMB } = {},
 ) {
+  // THE MISSING CHEMISTRY LIMB (default OFF; reference behaviour untouched).
+  //
+  // Magnussen EDC computes the rate from turbulence ALONE:
+  //     omega = gamma* * rho * Y_lim / tau*
+  // Temperature appears nowhere. There is no Arrhenius factor, so the model
+  // never asks how fast the chemistry can actually go, or whether it is hot
+  // enough to react at all. Its own docstring says so: "no Arrhenius".
+  //
+  // Two failure modes follow, and both are measured:
+  //   - turbulence -> 0 gives rate -> 0 (omega ~ eps^1.25/k^1.5), when the
+  //     physical limit is a LAMINAR FLAME at S_L ~ 0.4 m/s. Hence zero flame
+  //     cells at U = 0.5.
+  //   - flame length 9x short at U = 4 (0.21 m against Byram's 1.77 m).
+  //
+  // The sibling kernel combustion_3d.step_combustion already has the right
+  // structure -- min(omega_chem, omega_mix), with omega_mix -> inf in the
+  // laminar limit so the Arrhenius rate takes over. This gives EDC the same
+  // limb, using the same constants from chemistry_closures/_constants.py:
+  //
+  //     omega = min( max(omega_EDC, omega_laminar), omega_chem )
+  //
+  // The Arrhenius CEILING is not optional. A bare floor would happily "burn"
+  // gas at 400 K, since nothing else in the expression knows about temperature.
+  //
   // DIAGNOSTIC (default OFF, so the reference behaviour is untouched).
   //
   // Magnussen EDC is a HIGH-Damkohler closure: it assumes chemistry is fast and
@@ -168,8 +199,17 @@ export function stepChemistryOdeEdc(
         const yLim = Yf < yO2 / sStoich ? Yf : yO2 / sStoich;
         omega = gammaStar * ((rhoI * yLim) / tauStar);
         if (useLaminarFloor) {
+          // Sub-grid laminar flame propagation: a flame crossing the cell
+          // at S_L. Dimensionally identical to the Damkohler cap the loop
+          // already builds as an UPPER bound and then discards (7.7).
           const omegaLam = (rhoI * yLim * laminarFloorSL) / dxCell;
           if (omegaLam > omega) omega = omegaLam;
+        }
+        if (chemistryLimb) {
+          // Arrhenius ceiling, same form and constants as step_combustion.
+          const kChem = aComb * Math.exp(-eComb / (R_GAS_EDC * T));
+          const omegaChem = rhoI * kChem * Yf * yO2;
+          if (omegaChem < omega) omega = omegaChem;
         }
 
         // (1) Beyler 1992 water-vapour quench — always on.

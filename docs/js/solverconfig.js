@@ -46,7 +46,12 @@ export const CFG = {
   // Phase 19/20 hybrid ON -- the production low-wind configuration. Without
   // it the resolved closure cannot propagate below ~3.5 m/s and the applet
   // would quietly under-predict instead of failing.
-  empiricalRosEnable: true, empiricalRosACh: A_CH.natural,
+  // a_ch = CUT, not natural. The bed here is rho_b = 1.07, h_bed = 0.10,
+  // sav = 2000 -- which is Cheney 1993 *Cut* grass verbatim (see
+  // Outdoor_Cheney_Cut4 deck). Feeding the natural-sward coefficient 0.406 to
+  // a cut-grass bed overstated the reference ROS by 1/0.845 = 1.18x, so both
+  // the empirical branch and every ratio measured against it were wrong.
+  empiricalRosEnable: true, empiricalRosACh: A_CH.cut,
   empiricalRosUThresholdMs: U_THRESH, empiricalRosBlendWidthMs: U_BLEND_W,
   // N_SUB = 1, not the upstream default of 10.
   //

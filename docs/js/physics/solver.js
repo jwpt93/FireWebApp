@@ -226,6 +226,7 @@ export function runSpread3D(cfg, onStep = null) {
     qRadMaxBedWm3 = Q_RAD_MAX_BED_DEFAULT,
     // Diagnostic only -- see edc.js. 0 disables (reference behaviour).
     laminarFloorSL = 0.0,
+    chemistryLimb = false,
     // Opt-in corrections to two energy-balance inconsistencies in the
     // radiation/bed coupling (SOLVER_PORT.md 7.8, defects 3 and 4):
     //   - feed the bed the ABSORPTION-only channel, not the net, since the
@@ -246,6 +247,16 @@ export function runSpread3D(cfg, onStep = null) {
     wallBlN: cfg.wallBlN ?? 0,
     wallBlFirstDz: cfg.wallBlFirstDz ?? 0.0,
     wallBlGrowth: cfg.wallBlGrowth ?? 1.3,
+    // These six were missing, so any config asking for a bed-top boundary
+    // layer was silently ignored and got the unrefined mesh. Same failure mode
+    // as SOLVER_PORT.md 7.6 (atm_growth inert upstream) -- caught because three
+    // dz-refinement runs returned byte-identical nz and dz.
+    bedTopInnerBlN: cfg.bedTopInnerBlN ?? 0,
+    bedTopInnerBlFirstDz: cfg.bedTopInnerBlFirstDz ?? 0.0,
+    bedTopInnerBlGrowth: cfg.bedTopInnerBlGrowth ?? 1.3,
+    bedTopOuterBlN: cfg.bedTopOuterBlN ?? 0,
+    bedTopOuterBlFirstDz: cfg.bedTopOuterBlFirstDz ?? 0.0,
+    bedTopOuterBlGrowth: cfg.bedTopOuterBlGrowth ?? 1.3,
     atmMaxDz: cfg.atmMaxDz ?? null,
     atmGrowth: cfg.atmGrowth ?? 1.3,
     atmUniformDz: cfg.atmUniformDz ?? null,
@@ -796,7 +807,7 @@ export function runSpread3D(cfg, onStep = null) {
       // spending ~20 full-field passes per step on it.
       stepChemistryOdeEdc(state.rho, state.T_g, state.Y_fuel, state.Y_O2,
         kTurb, epsTurb, chiRad, CP_GAS_DRY, dtSub, 1, omega, state.Y_H2O,
-        { ...shape, laminarFloorSL, dxCell: grid.dx });
+        { ...shape, laminarFloorSL, dxCell: grid.dx, chemistryLimb });
       // Chemistry already updated T_g, so Q_comb starts clean.
       QComb.fill(0.0);
 
@@ -980,7 +991,8 @@ export function runSpread3D(cfg, onStep = null) {
 
     if (onStep && onStep({
       step, t, dt, frontX: newFront, projDivMax, projNIter,
-      nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad,
+      nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad, omega,
+      sPyroMax: (() => { let m = 0; for (let c = 0; c < n; c++) if (bedSp[c] > m) m = bedSp[c]; return m; })(),
       TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame,
     }) === false) break;
 

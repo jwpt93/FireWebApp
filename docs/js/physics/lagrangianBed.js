@@ -424,9 +424,15 @@ export function stepBedParticles(s, g, out, par) {
   // both sides (SOLVER_PORT.md 7.8, defect 3).
   //
   // Fixed by weighting each particle's share of the cell's external heat by its
-  // own f_geom, NORMALISED per cell so the total delivered to the cell is
-  // unchanged. Redistribution, not attenuation -- no energy is created or lost,
-  // it just lands on the particles that can actually see the radiation.
+  // own absorption cross-section, A_p * f_geom, NORMALISED per cell so the
+  // total delivered to the cell is unchanged. Redistribution, not attenuation.
+  //
+  // The A_p term matters as much as f_geom. Absorption was split by particle
+  // COUNT, independent of size, while emission is eps*sigma*A_p*T^4. So as a
+  // particle burns down, A_p -> 0 while its share of the absorbed radiation
+  // stays fixed, and the only way to balance is T -> infinity. That is the
+  // 4601 K runaway. Kirchhoff again: absorptivity and emissivity belong to the
+  // SAME surface, so both must carry A_p and both must carry f_geom.
   const { nx, ny, nz } = g;
   const nxy = ny * nx;
   const nMax = s.alive.length;
@@ -470,7 +476,9 @@ export function stepBedParticles(s, g, out, par) {
       if (i2 < 0 || j2 < 0 || k2 < 0) continue;
       let hA = hBed - s.z[p];
       if (hA < 0.0) hA = 0.0;
-      fGeomSum[k2 * nxy + j2 * nx + i2] += Math.exp(-kappaBedEff * hA);
+      // Absorption cross-section: same A_p and same f_geom the emission uses.
+      const apP = (s.sav[p] * (s.m_solid[p] + s.m_char[p])) / rhoSolidTrue;
+      fGeomSum[k2 * nxy + j2 * nx + i2] += apP * Math.exp(-kappaBedEff * hA);
     }
   }
 
@@ -663,7 +671,11 @@ export function stepBedParticles(s, g, out, par) {
         // field, normalised so the cell total is preserved exactly.
         let hA0 = hBed - s.z[p];
         if (hA0 < 0.0) hA0 = 0.0;
-        QExtP = g.Q_solid_ext[c] * vCell * (Math.exp(-kappaBedEff * hA0) / fGeomSum[c]);
+        // NOTE: uses the PRE-step masses, matching the pre-pass sum, so the
+        // per-cell weights are consistent and the normalisation is exact.
+        const apAbs = (savP * (s.m_solid[p] + s.m_char[p])) / rhoSolidTrue;
+        QExtP = g.Q_solid_ext[c] * vCell
+              * ((apAbs * Math.exp(-kappaBedEff * hA0)) / fGeomSum[c]);
       } else if (nPerCellForSplit > 0) {
         QExtP = g.Q_solid_ext[c] * vCell / nPerCellForSplit;
       }

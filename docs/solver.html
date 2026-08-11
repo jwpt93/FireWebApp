@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live solver — how slow is it?</title>
+<title>Live solver</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -54,12 +54,6 @@
     color: var(--text-3); margin: 0 0 .85rem; font-weight: 600;
   }
 
-  .banner {
-    background: var(--warn-bg); color: var(--warn-ink);
-    border-radius: .5rem; padding: .7rem .9rem; margin: 0 0 1.25rem;
-    font-size: .88rem; max-width: 78ch;
-  }
-  .banner strong { font-weight: 650; }
 
   canvas#field {
     width: 100%; height: auto; display: block;
@@ -107,13 +101,6 @@
 
 <header>
   <h1>Live solver</h1>
-  <div class="banner">
-    <strong>It is slow.</strong> That is the point of this page — to show how
-    slow, honestly, so the trade-offs are visible. The headline number is
-    simulated seconds per wall-clock second: below 1 means the fire is
-    running slower than a real one would. The solver runs in a Web Worker, so
-    the page stays responsive while it grinds.
-  </div>
 </header>
 
 <div class="layout">
@@ -132,7 +119,7 @@
     <div class="card">
       <h2>Speed</h2>
       <p class="hero" id="xrt">—</p>
-      <p class="herosub" id="slower">not started</p>
+      <p class="herosub" id="slower">simulated seconds per second</p>
       <dl class="stats">
         <dt>Step</dt><dd id="step">—</dd>
         <dt>Simulated</dt><dd id="simt">—</dd>

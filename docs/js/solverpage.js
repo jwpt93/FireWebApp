@@ -1,10 +1,9 @@
 /**
  * Main-thread UI for the live-solver page.
  *
- * The point of this page is to answer one question honestly: how slow is the
- * real solver in a browser? So the speed readout is the headline, not a
- * footnote, and it reports simulated-seconds per wall-second rather than
- * anything that could be mistaken for a frame rate.
+ * Speed is reported as simulated seconds per wall-clock second, which is the
+ * meaningful measure for a solver -- not a frame rate, which would say nothing
+ * about how much physics happened.
  */
 import { buildPalette } from './solverframe.js';
 import { blendResolvedEmpirical, isExtrapolating, U2_PER_U10 } from './cheney.js';
@@ -91,8 +90,7 @@ function start() {
       $('simt').textContent = `${fmt(m.t, 3)} s`;
       $('msstep').textContent = `${fmt(m.msPerStep, 1)} ms`;
       $('xrt').textContent = `${fmt(m.xRealtime, 4)}×`;
-      $('slower').textContent = m.xRealtime > 0
-        ? `${fmt(1 / m.xRealtime, 0)}× slower than real time` : '—';
+      $('slower').textContent = 'simulated seconds per second';
       $('tg').textContent = `${fmt(m.TgMax, 0)} K`;
       $('ts').textContent = `${fmt(m.TsMax, 0)} K`;
       $('alive').textContent = m.nAlive != null ? m.nAlive.toLocaleString() : '—';

@@ -447,10 +447,11 @@ memory file:
    zero, it is the laminar flame at S_L ~ 0.4 m/s. Measured at U=0.5:
    **zero cells above 1000 K** — no flame exists at all.
 
-2. **The char-ox cap limits mass loss, not just heat release.** It reduces
-   `m_cons_ch` directly, so a particle cannot burn away fast enough to shed
-   energy and holds it as sensible heat instead. T_s reaches 3304 K in tests
-   (grass ash melts ~1500-1700 K).
+2. ~~**The char-ox cap limits mass loss.**~~ **RETRACTED.** The cap reduces
+   `m_cons_ch` and the heat release *together*, consistently, and
+   `char_ox_flux_cap_W_m2` is literature-grounded (Williams 1985 char surface
+   flux). Char oxidation genuinely is surface-flux limited. Acting on this
+   would have broken correct physics.
 
 3. **View-factor attenuation is one-sided.** Emission carries
    `f_geom = exp(-kappa*(h_bed - z_p))` (~12% for deep particles); absorption
@@ -465,14 +466,36 @@ memory file:
 And the cap that started the investigation, `Q_RAD_MAX = 1e5 W/m^3`: measured
 q_rad reaches 2.83e7, so it binds at up to **283x** on 8-16% of bed cells. It
 is NOT the cause of the low-wind failure — raising it 100x leaves ROS negative
-and degrades high wind — but it is compensating for defects 2 and 3, which is
-why removing it explodes.
+and degrades high wind. **And it is legitimate, not a band-aid**: at 1e7 W/m^3 a
+surface particle takes ~250 W over ~3.5e-5 m^2 = 7 MW/m^2, which equilibrates
+near 3400 K by sigma*T^4 alone. That flux is not physical for a bed cell.
 
 None of this overturns the Phase 18 closure-class conclusion. Those seven
 variants were all heat-TRANSPORT interventions and so was the radiation cap;
 all eight failed because the missing piece is the reaction, not the transport.
 Supplying the reaction (a laminar-propagation floor) does create a flame and
 still does not create spread.
+
+**Outcome.** The two Kirchhoff fixes (3 and 4) are implemented behind
+`radiationFixes`, default off. Scored on the project's eq6 ratio 1/3..3:
+
+| variant | U | ROS_Ts | ratio |
+|---|---|---|---|
+| reference | 4 | 27.04 | 0.516 pass |
+| radiationFixes | 4 | **30.56** | **0.584 pass, closer to Cheney** |
+| reference | 0.5 | -5.48 | fail (receding) |
+| radiationFixes | 0.5 | 0.00 | fail (stationary, no longer receding) |
+
+Worth keeping on their own merits. They do NOT unlock low-wind spread.
+
+A second hypothesis is also **retracted**: I argued the 4601 K runaway came
+from particles burning down while keeping a fixed share of absorbed radiation.
+Within-cell mass spread is only 2.7-14.2% and drops to 0.2% with the fixes on,
+and the fixes made the peak temperature WORSE (3304 -> 4581 K) because
+weighting by `A_p*f_geom` concentrates the cell's radiation onto the surface
+particles that can see it. Nine interventions have now failed across Phase 18
+and this session; the Finney intermittency argument is the only explanation
+consistent with all of them.
 
 ### 7.4 Validation fidelity ≠ applet fidelity
 

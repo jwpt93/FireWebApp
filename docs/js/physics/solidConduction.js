@@ -35,6 +35,9 @@
  * @param {number} dt
  * @param {object} opts {nx, ny, nz}
  */
+/** [W/m/K] dry grass thermal conductivity (solid_conduction_3d.K_SOLID_GRASS). */
+export const K_SOLID_GRASS = 0.20;
+
 export function stepSolidConductionVertical(
   Ts, alphaS, dzArr, dFaceAbove, dFaceBelow,
   kSolid, rhoSolid, cpSolid, dt, { nx, ny, nz } = {},

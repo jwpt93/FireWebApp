@@ -42,14 +42,18 @@ import { musclFaceValue } from './muscl.js';
 // ── closure constants ──────────────────────────────────────────────────────
 const NU_GAS = 1.5e-5;      // [m^2/s] at 300 K
 const G = 9.81;
-const C_MU = 0.09;
+export const C_MU = 0.09;
+
+/** Sanz 2003 canopy source-term coefficients. */
+export const BETA_P_CANOPY_DEFAULT = 1.0;   // mean-flow KE -> TKE production
+export const BETA_D_CANOPY_DEFAULT = 4.0;   // sub-grid wake-breakup dissipation
 const C_1EPS = 1.44;
 const C_2EPS = 1.92;
 const SIGMA_K = 1.0;
 const SIGMA_EPS = 1.3;
 const PR_T = 0.85;
-const K_MIN = 1.0e-8;
-const EPS_MIN = 1.0e-8;
+export const K_MIN = 1.0e-8;
+export const EPS_MIN = 1.0e-8;
 const NU_T_MIN = 0.0;
 const A_0_REAL = 4.04;
 const A_S_REAL = 4.5;

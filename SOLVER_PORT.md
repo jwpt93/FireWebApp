@@ -95,9 +95,32 @@ from the run's own timing profile — not by what exists in `physics_3d/`.
 | `turbulence_3d.apply_wall_function` | 60 | **done** — bit-exact |
 | `spread_3d` BC + advection helpers | 130 | **done** — bit-exact |
 | `mesh` + `Grid3D.build` (both branches) | 300 | **done** — bit-exact |
-| `spread_3d` main loop | ~800 | to do |
+| `spread_3d` main loop | ~800 | **done** — 17/17 integration, ROS 0.00% |
 
-**5,570 of ~6,400 done (87%).** 106/106 kernel checks pass. Only the main loop is left.
+**~6,400 of ~6,400 done.** 106/106 kernel checks and 17/17 integration checks
+pass. **The port is complete for the production Cheney configuration.**
+
+Whole-solver agreement on the integration case (24x1x30, 217 steps, 0.6 s):
+
+| | JS | Python | diff |
+|---|---|---|---|
+| **ROS** | 0.0998999 m/s | 0.0998999 m/s | **0.00%** |
+| steps | 218 | 217 | 0.46% |
+| T_g max | 1343.39 K | 1343.14 K | 0.02% |
+| T_s max | 1540.95 K | 1541.09 K | 0.01% |
+| Y_fuel max | 0.611979 | 0.611494 | 0.08% |
+| rho mean | 0.812344 | 0.813250 | 0.11% |
+| wall time | **2.9 s** | 3.1 s | — |
+
+Worst per-step trajectory deviation over all 218 samples: 5.6% on T_g max,
+4.6% on T_s max. That is the expected signature of EDC's discontinuous
+extinction gates — the two runs diverge transiently in the detail and land in
+the same place — not of a transcription error, which would show a monotonic
+drift.
+
+The wall-time result is the one I would not have predicted: **JS is level with
+numba here**, not the 2.2x slower the earlier micro-benchmarks suggested and
+nowhere near the 15-25x my first estimate claimed. See §6.
 
 ### The ~4,900 estimate was wrong — it is ~6,100
 
@@ -375,6 +398,40 @@ parameter that materially affects physics must be explicitly set in the deck).
 This is the mirror image: parameters explicitly set in the deck that silently
 affect nothing. The rule protects against relying on defaults; nothing
 currently protects against a deck line that is quietly ignored.
+
+### 7.7 The O2-supply rate and Damköhler cap are computed and discarded
+
+Every chemistry sub-step — ten per outer step — the loop does this:
+
+```python
+omega_O2.fill(1.0e30)
+combustion_3d.step_o2_supply_rate(...)          # 6-face upwind over the interior
+_u_prime = np.sqrt(2.0 * k_turb / 3.0)          # full-field
+_omega_max_T = state.rho * (S_L_GRASS + _u_prime) / grid.dx
+chemistry_closures.run(combustion_closure, ..., omega_O2=omega_O2,
+                       omega_max_T=_omega_max_T, tau_mix=tau_mix, ...)
+```
+
+The EDC closure's signature ends in `**_unused`, and none of `tau_mix`,
+`omega_O2` or `omega_max_T` are among its named parameters — it derives its own
+timescale from `k` and `eps`. All three are silently swallowed.
+
+They are genuinely live for the FSD and PaSR closures. But **EDC is the
+production closure**, so on every production run this is dead work. The
+profiler on the integration case puts `combustion:o2_supply` at **2.1% of loop
+time** on its own, plus two full-field temporaries per sub-step for
+`_omega_max_T` that land in the unprofiled remainder.
+
+The port omits it. That is a deliberate exception to the
+reproduce-faithfully rule used everywhere else here, and the distinction is
+worth being precise about: elsewhere the port reproduces upstream *behaviours*
+that affect results (the EDC flag leak, the `int()` truncation, the Ny=1 empty
+loop). This is arithmetic whose output provably never reaches a consumer.
+Skipping it cannot change a number — and the integration test agreeing to
+0.00% on ROS is the evidence.
+
+Cheap fix upstream: hoist the three computations inside a
+`if combustion_closure in ("level_set_fsd", "pasr"):` guard.
 
 ### 7.4 Validation fidelity ≠ applet fidelity
 

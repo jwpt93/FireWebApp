@@ -237,6 +237,7 @@ export function runSpread3D(cfg, onStep = null) {
     // Default off: reference behaviour is preserved bit for bit.
     radiationFixes = false,
     moistureGateEnable = true,
+    hConvDerive = false,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -607,7 +608,8 @@ export function runSpread3D(cfg, onStep = null) {
 
     tic();
     stepBedParticles(bed,
-      { ...shape, T_g: state.T_g, Y_O2: state.Y_O2, Q_solid_ext: bedQsx },
+      { ...shape, T_g: state.T_g, Y_O2: state.Y_O2, Q_solid_ext: bedQsx,
+        u: state.u, v: state.v, w: state.w },
       { S_pyro: bedSp, S_drying: bedSd, Q_pyro: bedQp, Q_drying: bedQd,
         Y_F_source: bedYFs, Q_char: bedQch, Q_smold: bedQsm, Q_g_conv: bedQgc,
         nAliveOut, nBurnedOut, diagMaxOut: diagMax },
@@ -625,7 +627,7 @@ export function runSpread3D(cfg, onStep = null) {
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
-        absorbGeometric: radiationFixes, moistureGateEnable,
+        absorbGeometric: radiationFixes, moistureGateEnable, hConvDerive,
         nPerCellForSplit: lagrangianBedNPerCell });
     toc('bed');
 

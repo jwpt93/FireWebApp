@@ -99,6 +99,44 @@ export const ALIVE_TRUE = 1;
 // Smolder flux cap [W/m^2] — gentler than char-ox by the 2/5 volumetric ratio.
 const Q_SMOLD_FLUX_MAX = 4.0e4;
 
+// ── Derived gas-particle convective coefficient ───────────────────────
+//
+// h_conv is normally a deck CONSTANT (production uses 250 W/m^2/K at every
+// wind). That is 2.5x above the range this module's own H_CONV_DEFAULT comment
+// cites -- "lit-bracketed 10-100 W/m^2/K depending on wind" (Mell 2007) -- and
+// it does not vary with wind, though forced convection gives Nu ~ Re^0.5 so it
+// should scale as sqrt(u).
+//
+// Everything needed to derive it is already in the solver: local gas speed per
+// cell, sav per particle, and gas properties. Treating a grass blade as a
+// cylinder in cross-flow with characteristic dimension d = 4/sav:
+//
+//     Re = |u|·d/nu      Nu = 0.51·Re^0.5·Pr^(1/3)      h = Nu·k/d
+//
+// Properties at the film temperature T_f = (T_g + T_s)/2, with the standard
+// air scalings k ~ T^0.8 and nu ~ T^1.7 about their 300 K values.
+//
+// Zuber/Hilpert cylinder cross-flow, C = 0.51 and m = 0.5 for Re = 40-4000
+// (Incropera & DeWitt, Table 7.2), which brackets the Re = 100-600 a grass
+// blade sees in-bed at 1-4 m/s.
+const K_AIR_300 = 0.0263;     // [W/m/K]
+const NU_AIR_300 = 1.57e-5;   // [m^2/s]
+const PR_AIR = 0.71;
+const PR13 = Math.cbrt(PR_AIR);
+
+/** Convective coefficient for a blade of surface-to-volume ratio sav. */
+export function hConvDerived(uMag, sav, Tg, Ts) {
+  const d = 4.0 / sav;
+  const Tf = 0.5 * (Tg + Ts);
+  const s = Tf / 300.0;
+  const k = K_AIR_300 * Math.pow(s, 0.8);
+  const nu = NU_AIR_300 * Math.pow(s, 1.7);
+  const Re = (Math.abs(uMag) * d) / nu;
+  if (!(Re > 0.0)) return 0.0;
+  const Nu = 0.51 * Math.sqrt(Re) * PR13;
+  return (Nu * k) / d;
+}
+
 // ── Cell location ─────────────────────────────────────────────────────
 
 /**
@@ -500,6 +538,12 @@ export function stepBedParticles(s, g, out, par) {
     const c = k * nxy + j * nx + i;
 
     const vCell = dx * dy * dzArr[k];
+    // Derived h_conv (opt-in). Uses the LOCAL gas speed, so it varies through
+    // the bed depth and collapses behind the front, unlike the deck constant.
+    const hConvCell = par.hConvDerive === true
+      ? hConvDerived(Math.hypot(g.u[c], g.v[c], g.w[c]), s.sav[p],
+                     g.T_g[c], s.T_s[p])
+      : hConv;
     let Ts = s.T_s[p];
     const Tg = g.T_g[c];
     const YO2 = g.Y_O2[c];
@@ -664,7 +708,7 @@ export function stepBedParticles(s, g, out, par) {
     let QConv = 0.0;
     if (mTotalP > 0.0) {
       const AP = savP * (mSolidP + mCharP) / rhoSolidTrue;
-      QConv = hConv * AP * (Tg - Ts);
+      QConv = hConvCell * AP * (Tg - Ts);
       // HEAT_OF_PYROLYSIS positive -> endothermic -> cools the particle;
       // HOR_OP_MD2004 negative -> exothermic -> heats it.
       const QRxn = -ratePyro * (fThermal * HEAT_OF_PYROLYSIS + fOp * HOR_OP_MD2004);

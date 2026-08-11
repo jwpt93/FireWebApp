@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live solver — how slow is it?</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --surface-0: #f4f4f1; --surface-1: #fcfcfb;
+    --border: rgba(11,11,11,0.14);
+    --text-1: #0b0b0b; --text-2: #52514e; --text-3: #83817a;
+    --accent: #2a78d6; --live: #eb6834;
+    --warn-bg: rgba(237,161,0,0.14); --warn-ink: #7a5300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface-0: #121211; --surface-1: #1a1a19;
+      --border: rgba(255,255,255,0.16);
+      --text-1: #ffffff; --text-2: #c3c2b7; --text-3: #8c8b82;
+      --accent: #3987e5; --live: #d95926;
+      --warn-bg: rgba(201,133,0,0.20); --warn-ink: #f0c667;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface-0: #121211; --surface-1: #1a1a19;
+    --border: rgba(255,255,255,0.16);
+    --text-1: #ffffff; --text-2: #c3c2b7; --text-3: #8c8b82;
+    --accent: #3987e5; --live: #d95926;
+    --warn-bg: rgba(201,133,0,0.20); --warn-ink: #f0c667;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-0); color: var(--text-1);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
+  header h1 { font-size: 1.4rem; margin: 0 0 .3rem; letter-spacing: -0.01em; }
+  header p { margin: 0 0 1rem; color: var(--text-2); max-width: 66ch; }
+  a { color: var(--accent); }
+
+  .layout { display: grid; gap: 1.1rem; grid-template-columns: 1fr; }
+  @media (min-width: 940px) { .layout { grid-template-columns: 1fr 320px; } }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: .6rem; padding: 1rem 1.1rem;
+  }
+  .card h2 {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--text-3); margin: 0 0 .85rem; font-weight: 600;
+  }
+
+  .banner {
+    background: var(--warn-bg); color: var(--warn-ink);
+    border-radius: .5rem; padding: .7rem .9rem; margin: 0 0 1.25rem;
+    font-size: .88rem; max-width: 78ch;
+  }
+  .banner strong { font-weight: 650; }
+
+  canvas#field {
+    width: 100%; height: auto; display: block;
+    image-rendering: pixelated; border-radius: .4rem;
+    background: #0a0a0f;
+  }
+  .fieldwrap { overflow-x: auto; }
+
+  .hero { margin: 0 0 .2rem; font-size: 2.1rem; font-weight: 650;
+          letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .herosub { color: var(--text-2); font-size: .9rem; margin: 0 0 1rem; }
+
+  dl.stats { display: grid; grid-template-columns: auto 1fr; gap: .3rem .8rem;
+             margin: 0; font-size: .88rem; }
+  dl.stats dt { color: var(--text-3); }
+  dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+  label.field { display: block; margin: 0 0 .85rem; font-size: .85rem; color: var(--text-2); }
+  label.field span.v { float: right; color: var(--text-1); font-variant-numeric: tabular-nums; }
+  select, input[type=range] { width: 100%; margin-top: .35rem; }
+  select { padding: .35rem; background: var(--surface-0); color: var(--text-1);
+           border: 1px solid var(--border); border-radius: .35rem; }
+  button {
+    width: 100%; padding: .6rem; font-size: .95rem; font-weight: 600;
+    border-radius: .4rem; border: 1px solid var(--border);
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button[data-on="1"] { background: var(--live); }
+  button:disabled, select:disabled, input:disabled { opacity: .55; cursor: default; }
+  .note { font-size: .82rem; color: var(--text-3); margin: .5rem 0 0; }
+  .err { background: rgba(200,40,40,.12); border-radius: .4rem;
+         padding: .6rem .8rem; font-size: .85rem; margin-top: .8rem;
+         white-space: pre-wrap; }
+  .done { background: rgba(40,140,80,.12); border-radius: .4rem;
+          padding: .6rem .8rem; font-size: .85rem; margin-top: .8rem; }
+  .legend { display: flex; align-items: center; gap: .5rem; margin-top: .6rem;
+            font-size: .78rem; color: var(--text-3); }
+  .ramp { height: 10px; flex: 1; border-radius: 2px;
+          background: linear-gradient(90deg, #0c0616, #961a0c, #ec7414, #fce8b0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Live solver</h1>
+  <p>
+    This page runs the <strong>actual 3D solver</strong> in your browser — the same
+    kernels as the reference implementation, ported to JavaScript and checked
+    against it to 0.00% on rate of spread. Nothing here is interpolated or
+    pre-computed.
+  </p>
+  <div class="banner">
+    <strong>It is slow.</strong> That is the point of this page — to show how
+    slow, honestly, so the trade-offs are visible. The headline number is
+    simulated seconds per wall-clock second: below 1 means the fire is
+    running slower than a real one would. The solver runs in a Web Worker, so
+    the page stays responsive while it grinds.
+  </div>
+</header>
+
+<div class="layout">
+  <div>
+    <div class="card">
+      <h2>Gas temperature · vertical slice</h2>
+      <div class="fieldwrap"><canvas id="field" width="120" height="20"></canvas></div>
+      <div class="legend">
+        <span>300 K</span><div class="ramp"></div><span>1500 K</span>
+      </div>
+      <p class="note" id="meshinfo">—</p>
+    </div>
+
+    <div class="card" style="margin-top:1.1rem">
+      <h2>What you are looking at</h2>
+      <p class="note" style="margin-top:0">
+        A side-on slice through the fuel bed and the air above it, wind blowing
+        left to right. The bright band is the flame; the plume leaning downwind
+        above it is the solver's own solution of the momentum and buoyancy
+        equations, not a drawn effect. Only the lowest ~1.2 m of an 8 m domain
+        is shown — the rest is quiescent air.
+      </p>
+      <p class="note">
+        Ignition is solid-phase: bed particles in the source patch are seeded
+        hot and the gas warms through convection and pyrolysis volatiles, the
+        way a torch-flash igniter actually works.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Speed</h2>
+      <p class="hero" id="xrt">—</p>
+      <p class="herosub" id="slower">not started</p>
+      <dl class="stats">
+        <dt>Step</dt><dd id="step">—</dd>
+        <dt>Simulated</dt><dd id="simt">—</dd>
+        <dt>Per step</dt><dd id="msstep">—</dd>
+        <dt>Peak gas T</dt><dd id="tg">—</dd>
+        <dt>Peak solid T</dt><dd id="ts">—</dd>
+        <dt>Live particles</dt><dd id="alive">—</dd>
+      </dl>
+      <div class="err" id="err" hidden><strong>Solver stopped:</strong>
+        <div id="errtext"></div></div>
+      <div class="done" id="done" hidden><span id="donetext"></span></div>
+    </div>
+
+    <div class="card" style="margin-top:1.1rem">
+      <h2>Case</h2>
+      <label class="field">Mesh
+        <select id="preset">
+          <option value="grow10" selected>12 m · dx 0.10 · growing atmosphere</option>
+          <option value="window2m">2 m window · dx 0.10</option>
+          <option value="grow05">12 m · dx 0.05 · growing atmosphere</option>
+          <option value="production">12 m · dx 0.05 · production mesh</option>
+        </select>
+      </label>
+      <p class="note" id="presetnote">—</p>
+
+      <label class="field" style="margin-top:1rem">Wind (10 m)
+        <span class="v" id="windval">4.0 m/s</span>
+        <input id="wind" type="range" min="1" max="8" step="0.5" value="4">
+      </label>
+      <label class="field">Fuel moisture
+        <span class="v" id="moistval">4%</span>
+        <input id="moist" type="range" min="2" max="20" step="1" value="4">
+      </label>
+      <button id="run">Run solver</button>
+      <p class="note">
+        Stops automatically at 30 s of simulated time, or when the front nears
+        the outlet, or if the fire goes out.
+      </p>
+    </div>
+  </div>
+</div>
+
+<p class="note" style="margin-top:1.6rem">
+  <a href="./">← back to the fast applet</a> · that one uses the Cheney
+  regression blended with pre-computed solver results, which is why it is
+  instant.
+</p>
+
+</div>
+<script type="module" src="./js/solverpage.js"></script>
+</body>
+</html>

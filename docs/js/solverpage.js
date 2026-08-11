@@ -7,89 +7,11 @@
  * anything that could be mistaken for a frame rate.
  */
 import { buildPalette } from './solverframe.js';
+import { blendResolvedEmpirical, isExtrapolating, U2_PER_U10 } from './cheney.js';
+import { CFG, CFG_NOTE, U_THRESH, U_BLEND_W } from './solverconfig.js';
 
 const $ = (id) => document.getElementById(id);
 const PALETTE = buildPalette(300, 1500);
-
-// Three meshes, chosen to make the cost of the mesh decision visible rather
-// than hidden behind a single "quality" slider.
-const PRESETS = {
-  window2m: {
-    label: '2 m window · dx 0.10 · growing atmosphere',
-    note: 'Smallest useful domain. Fast, but the outlet sits almost on the '
-        + 'flame — the solver normally refuses to measure ROS this close.',
-    cfg: { Lx: 2.0, dx: 0.10, Lz: 8.0, bedXStart: 0.3, bedXEnd: 1.7,
-           wallBlN: 1, wallBlFirstDz: 0.025, wallBlGrowth: 1.0 },
-  },
-  grow10: {
-    label: '12 m · dx 0.10 · growing atmosphere',
-    note: 'Full Cheney domain on the mesh the deck actually asks for. This is '
-        + 'the realistic target.',
-    cfg: { Lx: 12.0, dx: 0.10, Lz: 8.0, bedXStart: 1.0, bedXEnd: 9.0,
-           wallBlN: 1, wallBlFirstDz: 0.025, wallBlGrowth: 1.0 },
-  },
-  grow05: {
-    label: '12 m · dx 0.05 · growing atmosphere',
-    note: 'Production horizontal resolution, corrected vertical mesh.',
-    cfg: { Lx: 12.0, dx: 0.05, Lz: 8.0, bedXStart: 1.0, bedXEnd: 9.0,
-           wallBlN: 1, wallBlFirstDz: 0.025, wallBlGrowth: 1.0 },
-  },
-  production: {
-    label: '12 m · dx 0.05 · PRODUCTION mesh (320 uniform z-cells)',
-    note: 'What the deck currently gets: atm_growth and atm_max_dz are ignored '
-        + 'on the legacy mesh path, so the atmosphere is 25 mm cells all the '
-        + 'way to 8 m. 76,800 cells. Included so the cost is visible — expect '
-        + 'roughly 1.5 s per step.',
-    cfg: { Lx: 12.0, dx: 0.05, Lz: 8.0, bedXStart: 1.0, bedXEnd: 9.0 },
-  },
-};
-
-const BASE = {
-  Ly: 0.10, dy: 0.10, nZBed: 4, hBed: 0.10, rhoB: 1.07,
-  sigmaSav: 2000.0, canopyCd: 0.30, initialMoistureFrac: 0.04,
-  atmGrowth: 1.20, atmMaxDz: 1.0,
-  cflFactor: 0.40, minDtS: 1.0e-4,
-  ignitionDurationS: 3.0, ignitionQMult: 3.0, ignitionWidthMult: 3.0,
-  ignitionTPinEnable: false,
-  solidPhaseIgnitionEnable: true, solidPhaseIgnitionTsK: 1000.0,
-  lagrangianBedNPerCell: 4, lagrangianBedDryingMode: 'combined',
-  lagrangianBedHConv: 250.0, lagrangianBedViewFactorGeometric: true,
-  domSubcycleEvery: 5, levelSetPassive: true, wallFunction: false,
-  // N_SUB = 1, not the upstream default of 10.
-  //
-  // Upstream notes that N_SUB "has never had a convergence study -- it is a
-  // hardcoded constant justified by splitting theory, not by measurement".
-  // The study was run (scripts/run_2d_nsub_validation.py, 2D production mesh):
-  // six Cheney cases at N_SUB 10 vs 1, worst ROS deviation 1.9% against a 5%
-  // band, all pass. Reproduced independently in this port at -0.01% on a 6 s
-  // run. It is worth 1.78x here -- the chemistry sub-loop drops from 48% of
-  // step time to 8%.
-  //
-  // The SOLVER's own default stays at 10, faithful to upstream. This is the
-  // applet making an explicit, measured choice.
-  nSub: 1,
-  // Projection inner tolerance 1e-4, not the upstream 1e-6.
-  //
-  // The Krylov solve feeds an OUTER loop that iterates on the actual
-  // divergence residual to projDivTol = 1e-3. An inner tolerance three orders
-  // tighter than the thing consuming it is resolving detail that gets thrown
-  // away. Measured, 12 m / dx 0.10, ROS identical to 4 decimals throughout:
-  //
-  //   rtol    ms/step   projection   proj iters   div residual
-  //   1e-6     16.4       10.06         1.00        6.1e-6
-  //   1e-5     13.9        7.58         1.00        5.9e-5
-  //   1e-4     11.7        5.23         1.00        5.7e-4
-  //   1e-3     34.2       21.68         1.71        1.0e-3   <- cliff
-  //
-  // There is a cliff, not a gradient. Past ~3e-4 the divergence residual
-  // reaches projDivTol and the outer loop needs a SECOND projection, which
-  // costs far more than the loosened inner tolerance saved. 1e-4 keeps about
-  // 2x margin to it. If a stiffer case ever crosses anyway the failure is
-  // graceful -- an extra outer iteration, so slower, not wrong.
-  //
-  // As with nSub, the SOLVER's own default stays at the upstream 1e-6.
-  projectionCgRtol: 1.0e-4,
-};
 
 let worker = null;
 let meta = null;
@@ -102,7 +24,7 @@ function setRunning(on) {
   running = on;
   $('run').textContent = on ? 'Stop' : 'Run solver';
   $('run').dataset.on = on ? '1' : '';
-  for (const el of [$('preset'), $('wind'), $('moist')]) el.disabled = on;
+  for (const el of [$('wind'), $('moist')]) el.disabled = on;
 }
 
 function draw(data) {
@@ -141,9 +63,8 @@ function stop() {
 }
 
 function start() {
-  const preset = PRESETS[$('preset').value];
   const cfg = {
-    ...BASE, ...preset.cfg,
+    ...CFG,
     windSpeedMs: Number($('wind').value),
     initialMoistureFrac: Number($('moist').value) / 100,
     maxWallTimeS: 30.0,
@@ -200,17 +121,32 @@ function start() {
   worker.postMessage({ type: 'run', cfg, frameEvery: 3, zTop: 1.2 });
 }
 
-function syncPresetNote() {
-  const p = PRESETS[$('preset').value];
-  $('presetnote').textContent = p.note;
+function syncWindNote() {
+  const u10 = Number($('wind').value);
+  const w = blendResolvedEmpirical(u10, U_THRESH, U_BLEND_W);
+  const u2 = u10 * U2_PER_U10;
+  const extrap = isExtrapolating(u2, Number($('moist').value) / 100);
+  const driver = w >= 1 ? 'Cheney fit only'
+    : (w <= 0 ? 'resolved solver only'
+              : `${(w * 100).toFixed(0)}% fit / ${((1 - w) * 100).toFixed(0)}% solver`);
+  $('driver').textContent = driver;
+  $('windnote').innerHTML =
+    `Front driven by <strong>${driver}</strong> (U₂ = ${u2.toFixed(2)} m/s).`
+    + (extrap
+      ? ' <span style="color:var(--warn-ink)">Outside the range Cheney 1993'
+        + ' fitted (U₂ 2–7 m/s, moisture 2–12%) — the fit is being'
+        + ' extrapolated here.</span>'
+      : '');
 }
 
 $('run').addEventListener('click', () => (running ? stop() : start()));
-$('preset').addEventListener('change', syncPresetNote);
 $('wind').addEventListener('input', () => {
   $('windval').textContent = `${Number($('wind').value).toFixed(1)} m/s`;
+  syncWindNote();
 });
 $('moist').addEventListener('input', () => {
   $('moistval').textContent = `${Number($('moist').value).toFixed(0)}%`;
+  syncWindNote();
 });
-syncPresetNote();
+$('cfgnote').textContent = CFG_NOTE;
+syncWindNote();

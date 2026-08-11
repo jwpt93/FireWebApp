@@ -1,0 +1,74 @@
+# ── Cross-language integration case: JS port vs Python reference ──────────
+#
+# NOT a validation case. There is no experiment behind these numbers and no
+# acceptance band on the physics. Its only job is to be a case BOTH codes can
+# run to completion in reasonable wall time, so their ROS can be compared.
+#
+# Deliberately small: Ny = 1 (the FFT preconditioner in the port is ported for
+# the single-cell periodic direction only), a 3 m domain, a coarse 0.10 m dx,
+# 4 particles per cell, and 0.6 s of simulated time. The production Cheney
+# deck is 384,000 cells; this is 720.
+#
+# Every physics option matches the production Cheney Cut-4 configuration —
+# Lagrangian bed, k-epsilon, EDC, DOM, FFT-PCG, combined drying, geometric
+# view factor. What differs is only resolution and duration.
+#
+# Because the mesh is coarse and the run short, the ROS this produces is NOT
+# a physically meaningful spread rate and must not be quoted as one. Two codes
+# solving the same discrete equations on the same coarse mesh should still
+# agree with each other, and that agreement is the whole point.
+
+t_end = 6.0
+
+outdoor.Lx              = 3.0
+outdoor.Ly              = 0.10           # Ny = 1: the port's Poisson
+outdoor.Lz              = 0.6            #   preconditioner is Ny=1 only
+outdoor.dx              = 0.10
+outdoor.dy              = 0.10
+outdoor.n_z_bed         = 4              # h_bed=0.10 / 4 -> dz_bed=0.025 m
+outdoor.bed_x_start     = 0.5
+outdoor.bed_x_end       = 2.5
+
+# Inert on the legacy mesh path (wall_bl_N = 0) -- see SOLVER_PORT.md 7.6.
+# Kept so this deck matches the production one line for line.
+outdoor.atm_growth      = 1.20
+outdoor.atm_max_dz      = 1.0
+outdoor.wall_bl_N       = 0.0
+outdoor.wall_bl_first_dz = 0.0
+outdoor.wall_bl_growth  = 1.0
+
+# Fuel bed: Cheney 1993 Cut grass
+outdoor.bulk_density_kg_m3 = 1.07
+outdoor.fuel_depth_m       = 0.10
+outdoor.sav_ratio_1_m      = 2000.0
+outdoor.canopy_C_d         = 0.30
+outdoor.initial_moisture_frac = 0.04
+
+outdoor.wind_speed_m_s     = 4.0
+
+outdoor.turbulence_model   = k_epsilon
+outdoor.wall_function      = false
+
+outdoor.combustion_closure    = edc
+outdoor.radiation_solver      = dom
+outdoor.dom_subcycle_every    = 5
+outdoor.projection_method     = fft_pcg
+outdoor.cfl_factor            = 0.40
+
+outdoor.lagrangian_bed_enable     = true
+outdoor.lagrangian_bed_N_per_cell = 4
+outdoor.lagrangian_bed_drying_mode = combined
+outdoor.lagrangian_bed_h_conv     = 250.0
+outdoor.lagrangian_bed_view_factor_geometric = true
+
+outdoor.level_set_passive    = false
+
+outdoor.solid_phase_ignition_enable = true
+outdoor.solid_phase_ignition_t_s_k  = 1000.0
+outdoor.ignition_duration_s  = 3.0
+outdoor.ignition_T_pin_enable = false
+outdoor.ignition_q_mult      = 3.0
+outdoor.ignition_width_mult  = 3.0
+
+outdoor.max_wall_time_s      = 6.0
+outdoor.min_dt_s             = 1.0e-4

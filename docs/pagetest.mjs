@@ -11,13 +11,16 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { visibleRows, packFrame, fireColour, buildPalette } from './js/solverframe.js';
+import { CFG } from './js/solverconfig.js';
+import { runSpread3D } from './js/physics/solver.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const results = [];
 const check = (name, ok, detail) => results.push({ name, ok, detail });
 
 const html = readFileSync(join(HERE, 'solver.html'), 'utf8');
-const page = readFileSync(join(HERE, 'js', 'solverpage.js'), 'utf8');
+const page = readFileSync(join(HERE, 'js', 'solverpage.js'), 'utf8')
+  + readFileSync(join(HERE, 'js', 'solverconfig.js'), 'utf8');
 
 // 1. Every $('...') the script touches must exist in the markup. This is the
 //    single most common way a page like this silently half-works.
@@ -31,14 +34,25 @@ const page = readFileSync(join(HERE, 'js', 'solverpage.js'), 'utf8');
       : `missing from markup: ${missing.join(', ')}`);
 }
 
-// 2. Every <option value> must be a key in PRESETS, or selecting it throws.
+// 2. The page ships ONE measured configuration. Assert the selector and its
+//    presets are really gone -- a leftover $('preset') would throw on load,
+//    and the previous version of this check went vacuous when the dropdown
+//    was removed (0 options, still "passing").
 {
-  const opts = [...html.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
-  const missing = opts.filter((v) => !new RegExp(`\\b${v}:\\s*\\{`).test(page));
-  check('page.presets', missing.length === 0,
-    missing.length === 0
-      ? `${opts.length} mesh options all defined in PRESETS`
-      : `option(s) with no PRESETS entry: ${missing.join(', ')}`);
+  const problems = [];
+  if (/PRESETS/.test(page)) problems.push('PRESETS still referenced');
+  if (/\$\('preset'\)/.test(page)) problems.push("$('preset') still referenced");
+  if (/<select/.test(html)) problems.push('<select> still in markup');
+  if (!/const CFG = \{/.test(page)) problems.push('CFG not defined');
+  for (const k of ['levelSetPassive: true', 'nSub: 1', 'projectionCgRtol: 1.0e-4',
+                   'empiricalRosEnable: true']) {
+    if (!page.includes(k)) problems.push(`CFG missing ${k}`);
+  }
+  check('page.singleConfig', problems.length === 0,
+    problems.length === 0
+      ? 'one measured config; selector and presets removed; all 4 tuned '
+        + 'settings present'
+      : problems.join('; '));
 }
 
 // 3. The worker must not import anything that does not exist.
@@ -106,6 +120,21 @@ const page = readFileSync(join(HERE, 'js', 'solverpage.js'), 'utf8');
   check('frame.palette', ok && cold[0] === 0 && hot[0] > 240,
     ok ? `monotonic luminance across 256 steps; 300 K black, 1500 K ${hot.join(',')}`
        : `luminance dips at step ${at}`);
+}
+
+// 7. The shipped config must actually RUN. Cheap 1.5 s smoke -- this is the
+//    one check that would catch a config the page offers but the solver
+//    rejects (an unsupported deck option throws by design).
+{
+  let ok = true, detail = '';
+  try {
+    const r = runSpread3D({ ...CFG, windSpeedMs: 4.0, maxWallTimeS: 1.5 });
+    ok = r.steps > 10 && Number.isFinite(r.rosMMin);
+    detail = `${r.steps} steps, ${r.grid.nz}x${r.grid.nx} = `
+           + `${r.grid.nz * r.grid.ny * r.grid.nx} cells, `
+           + `ROS_Ts ${Number.isFinite(r.rosTsMMin) ? r.rosTsMMin.toFixed(2) : 'n/a'} m/min`;
+  } catch (e) { ok = false; detail = e.message; }
+  check('page.configRuns', ok, detail);
 }
 
 const w = Math.max(...results.map((r) => r.name.length));

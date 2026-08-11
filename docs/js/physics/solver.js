@@ -57,13 +57,14 @@ import {
   aggregateParticlesToMLocalGrid, stepHorizontalSolidConductionScatter,
   DRY_MODE_ARRHENIUS, DRY_MODE_EQUILIBRIUM, DRY_MODE_COMBINED,
   RHO_SOLID_TRUE_GRASS, CP_SOLID_GRASS, SAV_GRASS_DEFAULT,
-  EPS_SOLID_DEFAULT, T_BOIL_WATER, ALIVE_FALSE,
+  EPS_SOLID_DEFAULT, T_BOIL_WATER, ALIVE_FALSE, ALIVE_TRUE,
 } from './lagrangianBed.js';
 import {
   LevelSetFront3D, computePhiFlameFromState, flameBodyMaskFromPhiFlame,
   computeQDomFwdAtBand, computeQInAtFront3d, computeVn3d, updateCellAge,
   L_BURNOUT_M, DX_VN_BAND_M,
 } from './flameFront.js';
+import { rosFromU10, blendResolvedEmpirical, A_CH } from '../cheney.js';
 import {
   applyOutflowSponge, applyWallFunction,
   buildSoilGrid, stepSoilConduction, advGasEnergy,
@@ -96,7 +97,7 @@ const T_SURF_MAX = 10000.0;
 const Q_DRIP_PER_AREA = 30000.0;      // [W/m^2] gas-side drip torch
 const Q_DRIP_PER_AREA_BED = 30000.0;  // [W/m^2] solid-side, particle path
 const F_DRIP_TO_SOLID = 0.80;
-const Q_RAD_MAX_BED = 1.0e5;          // [W/m^3] clamp on q_rad into particles
+const Q_RAD_MAX_BED_DEFAULT = 1.0e5;  // [W/m^3] clamp on q_rad into particles
 const Q_IGNITION_PULSE = 240000.0;    // [W/m^2] Phase 15L kick intensity
 
 /** Midflame wind from the 10 m reference (Rothermel 1972 convention). */
@@ -141,8 +142,6 @@ const UNSUPPORTED = [
   ['moisture_jump_enable', (v) => v === true, 'the Phase 24 moisture jump is not ported'],
   ['volume_weighted_projection', (v) => v === true,
    'the volume-weighted projection is not ported (opt-in upstream, off by default)'],
-  ['empirical_ros_enable', (v) => v === true,
-   'the Phase 19 empirical-ROS hybrid is not ported'],
 ];
 
 function rejectUnsupported(cfg) {
@@ -203,6 +202,28 @@ export function runSpread3D(cfg, onStep = null) {
     hConvMult = 1.0,
     canopyBetaP = BETA_P_CANOPY_DEFAULT,
     canopyBetaD = BETA_D_CANOPY_DEFAULT,
+    // Phase 19/20 empirical-ROS hybrid. Off by default, matching upstream.
+    empiricalRosEnable = false,
+    empiricalRosACh = A_CH.natural,
+    empiricalRosUThresholdMs = 3.5,
+    empiricalRosBlendWidthMs = 1.0,
+    // Cap on radiant power delivered into bed particles [W/m^3].
+    //
+    // Upstream hardcodes 1e5 with a NUMERICAL justification ("the rate the
+    // particles can absorb without coupling-rate instability"). Measured, it
+    // binds on 8-16% of bed cells at up to 283x over -- exactly the cells at
+    // the front, where radiation is strongest.
+    //
+    // Integrated over the bed depth, 1e5 W/m^3 x 0.10 m caps absorbed flux at
+    // 10 kW/m^2. Measured flux at a grass-fire front is 20-100 kW/m^2 (Anderson
+    // 1969; Frankman 2013) and piloted ignition of cured grass needs roughly
+    // 10-20 kW/m^2 sustained. So the cap pins the bed at or below the ignition
+    // threshold by construction -- which is survivable above U~4 where
+    // convection makes up the difference, and fatal below it where radiation is
+    // the only forward mechanism.
+    //
+    // Exposed so that hypothesis is testable. Default unchanged.
+    qRadMaxBedWm3 = Q_RAD_MAX_BED_DEFAULT,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -389,6 +410,40 @@ export function runSpread3D(cfg, onStep = null) {
     ? grid.xMid[iSrcEnd - 1] + 0.5 * grid.dx
     : 0.0;
   const frontT = [0.0], frontX = [initialFrontX];
+
+  // ── ROS_Ts: the truthful spread metric ──────────────────────────────
+  // The level-set front is NOT the answer when the level set is passive --
+  // which is the canonical high-wind configuration. There v_n is zero by
+  // design, the marker never moves, and a level-set-derived ROS reads ~0
+  // whether the fire is spreading or extinct. Measured on 2026-08-10: 0.31
+  // m/min from the level set while the bed front advanced 5.5 m at 27.78.
+  //
+  // So track the SOLID front too, by the same rule the validation workers use
+  // (_cheney_phase16_worker.py): the furthest column with any cell at or above
+  // 600 K, over the full z-column -- not bed-only, and no alpha_s filter.
+  const T_IGN_TS = 600.0;
+  const tsT = [], tsX = [];
+  const tsFrontX = () => {
+    let iMax = -1;
+    for (let k = 0; k < nz; k++) {
+      for (let j = 0; j < ny; j++) {
+        for (let i = iMax + 1; i < nx; i++) {
+          if (state.T_s[k * nxy + j * nx + i] >= T_IGN_TS && i > iMax) iMax = i;
+        }
+      }
+    }
+    return iMax < 0 ? NaN : grid.xMid[iMax];
+  };
+
+  // ── Phase 19/20 empirical-ROS hybrid ────────────────────────────────
+  // Scalars, computed once: the inflow wind is constant in these cases. A
+  // dynamic-wind extension would move this inside the loop.
+  const empiricalRosMs = empiricalRosEnable
+    ? rosFromU10(windSpeedMs, initialMoistureFrac, empiricalRosACh) : 0.0;
+  const empiricalBlendW = empiricalRosEnable
+    ? blendResolvedEmpirical(windSpeedMs, empiricalRosUThresholdMs,
+                             empiricalRosBlendWidthMs) : 0.0;
+  let empiricalSeedCounter = 0;
   let dzMin = grid.dzArr[0];
   for (let k = 1; k < nz; k++) if (grid.dzArr[k] < dzMin) dzMin = grid.dzArr[k];
 
@@ -519,8 +574,8 @@ export function runSpread3D(cfg, onStep = null) {
       const invDz = 1.0 / grid.dzArr[k];
       for (let s = 0; s < nxy; s++) {
         let v = qRad[k * nxy + s] * invDz;
-        if (v > Q_RAD_MAX_BED) v = Q_RAD_MAX_BED;
-        else if (v < -Q_RAD_MAX_BED) v = -Q_RAD_MAX_BED;
+        if (v > qRadMaxBedWm3) v = qRadMaxBedWm3;
+        else if (v < -qRadMaxBedWm3) v = -qRadMaxBedWm3;
         bedQsx[k * nxy + s] += v;
       }
     }
@@ -863,6 +918,14 @@ export function runSpread3D(cfg, onStep = null) {
       computeVn3d(qIn3d, rhoB, CP_SOLID, hBed, TIgn, TAmb, bedMLocal,
         undefined, 1.0, vnField);
     }
+    // WRF-Fire / CAWFE pattern: blend the resolved front speed toward the
+    // empirical rate at low wind, where the resolved closure cannot propagate.
+    if (empiricalRosEnable && empiricalBlendW > 0.0) {
+      const w = empiricalBlendW;
+      for (let c = 0; c < n; c++) {
+        vnField[c] = (1.0 - w) * vnField[c] + w * empiricalRosMs;
+      }
+    }
     lset.evolve(dt, vnField);
     // Reinit runs in BOTH modes. Skipping it when passive looked safe and was
     // a regression: without periodic reinit the float precision drifts even at
@@ -893,11 +956,17 @@ export function runSpread3D(cfg, onStep = null) {
     }
     if (newFront > lastFrontX) lastFrontX = newFront;
 
+    // Sample the T_s front on the same ~1 s cadence the workers snapshot at.
+    if (tsT.length === 0 || t - tsT[tsT.length - 1] >= 1.0) {
+      const xTs = tsFrontX();
+      if (!Number.isNaN(xTs)) { tsT.push(t); tsX.push(xTs); }
+    }
+
     t += dt;
 
     if (onStep && onStep({
       step, t, dt, frontX: newFront, projDivMax, projNIter,
-      nAlive: nAliveOut[0], nBurned: nBurnedOut[0],
+      nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad,
       TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame,
     }) === false) break;
 
@@ -924,8 +993,34 @@ export function runSpread3D(cfg, onStep = null) {
   // position in the domain -- with bed_x_start > 0 those differ. Faithful.
   const rosMs = computeSteadyRos(frontT, frontX, t,
     (iSrcEnd - iSrcStart) * grid.dx, grid.Lx);
+
+  // Least-squares slope of the T_s front, skipping t < 1 s so the ignition
+  // transient does not enter the fit -- the workers' rule, and the reason
+  // Phase 17f caught a "PASS" that was really the source-patch burst.
+  let rosTsMs = NaN;
+  {
+    const idx = [];
+    for (let i = 0; i < tsT.length; i++) if (tsT[i] >= 1.0) idx.push(i);
+    if (idx.length >= 3) {
+      let sx = 0, sy = 0;
+      for (const i of idx) { sx += tsT[i]; sy += tsX[i]; }
+      const mx = sx / idx.length, my = sy / idx.length;
+      let num = 0, den = 0;
+      for (const i of idx) { num += (tsT[i] - mx) * (tsX[i] - my); den += (tsT[i] - mx) ** 2; }
+      if (den > 0) rosTsMs = num / den;
+    }
+  }
+
+  // The headline number follows the same switch the physics does. When the
+  // level set is passive it is inert, so reporting its position as the spread
+  // rate is meaningless; the solid front is the fire.
+  const rosReportedMs = levelSetPassive && Number.isFinite(rosTsMs) ? rosTsMs : rosMs;
   return {
-    rosMs, rosMMin: rosMs * 60.0, timings: prof,
+    rosMs: rosReportedMs, rosMMin: rosReportedMs * 60.0,
+    rosLsetMs: rosMs, rosLsetMMin: rosMs * 60.0,
+    rosTsMs, rosTsMMin: rosTsMs * 60.0,
+    tsT, tsX, timings: prof,
+    empiricalRosMs, empiricalBlendW,
     frontT, frontX, grid, state, lset, bed,
     steps: step, t, nAlloc,
   };

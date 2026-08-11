@@ -254,3 +254,30 @@ export function windProjectedSpeed(U2_m_s, moistureFrac, aCh, windDirRad, backin
     return v > back ? v : back;
   };
 }
+
+/**
+ * Weight applied to the EMPIRICAL rate in the blended front speed.
+ *
+ * 1.0 below (threshold - width): empirical only.
+ * 0.0 at or above threshold:     resolved solver only.
+ * Linear ramp between.  width = 0 gives a hard step.
+ *
+ * Port of model_outdoor/empirical_ros.py :: blend_resolved_empirical.
+ *
+ * The threshold is not a free knob. It is the wind below which the resolved
+ * closure stops propagating: Phase 19 set it at 1.4 and left a hole -- Nat 4%
+ * at U_10 = 2 resolved to 6.56 m/min against Cheney's 26.42, ratio 0.248, the
+ * single failure in an otherwise 19/20 sweep. Phase 20 "Option B" raised it to
+ * 3.5, clear of that hole. Upstream decks still carry the older 1.4/0.5.
+ *
+ * Why a mean-field closure fails at low wind at all: spread there is carried by
+ * intermittent flame contact, which a RANS average removes by construction
+ * (Finney 2015, PNAS 112:9833; Cheney 1998 section 3.2).
+ */
+export function blendResolvedEmpirical(U_m_s, uThreshold, blendWidth) {
+  if (U_m_s >= uThreshold) return 0.0;
+  if (blendWidth <= 0.0) return 1.0;
+  const uLo = uThreshold - blendWidth;
+  if (U_m_s <= uLo) return 1.0;
+  return (uThreshold - U_m_s) / blendWidth;
+}

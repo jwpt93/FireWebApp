@@ -124,12 +124,13 @@ function syncWindNote() {
   const w = blendResolvedEmpirical(u10, U_THRESH, U_BLEND_W);
   const u2 = u10 * U2_PER_U10;
   const extrap = isExtrapolating(u2, Number($('moist').value) / 100);
-  const driver = w >= 1 ? 'Cheney fit only'
-    : (w <= 0 ? 'resolved solver only'
-              : `${(w * 100).toFixed(0)}% fit / ${((1 - w) * 100).toFixed(0)}% solver`);
+  // No empirical forcing any more -- everything on this page is computed.
+  const driver = 'resolved solver';
   $('driver').textContent = driver;
   $('windnote').innerHTML =
-    `Front driven by <strong>${driver}</strong> (U₂ = ${u2.toFixed(2)} m/s).`
+    `Front driven by the <strong>resolved solver</strong> — no empirical fit `
+    + `(U₂ = ${u2.toFixed(2)} m/s). Below about 1.2 m/s the fire does not `
+    + `bridge to the next cell, so the slider stops at 2.`
     + (extrap
       ? ' <span style="color:var(--warn-ink)">Outside the range Cheney 1993'
         + ' fitted (U₂ 2–7 m/s, moisture 2–12%) — the fit is being'

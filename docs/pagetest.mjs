@@ -44,8 +44,14 @@ const page = readFileSync(join(HERE, 'js', 'solverpage.js'), 'utf8')
   if (/\$\('preset'\)/.test(page)) problems.push("$('preset') still referenced");
   if (/<select/.test(html)) problems.push('<select> still in markup');
   if (!/const CFG = \{/.test(page)) problems.push('CFG not defined');
+  // empiricalRosEnable MUST be false: the page shows computed physics only.
+  // The Phase 19/20 blend overwrote v_n with the Cheney fit and force-set T_s
+  // behind the level set. Measured bridging energy shows the resolved solver
+  // propagates from ~1.2 m/s, so the forcing is unnecessary above the slider
+  // floor of 2 m/s. If this ever flips back to true the page is fitting, not
+  // solving, and the claim on it becomes false.
   for (const k of ['levelSetPassive: true', 'nSub: 1', 'projectionCgRtol: 1.0e-4',
-                   'empiricalRosEnable: true']) {
+                   'empiricalRosEnable: false']) {
     if (!page.includes(k)) problems.push(`CFG missing ${k}`);
   }
   check('page.singleConfig', problems.length === 0,

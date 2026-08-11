@@ -13,7 +13,7 @@ export const U_THRESH = 3.5, U_BLEND_W = 1.0;
 
 // Hard floor at 1 m/s. Cheney 1993 did not measure below it, so there is no
 // basis for the fit there and no sub-1 m/s relation to fall back on.
-export const U_MIN = 1.0;
+export const U_MIN = 2.0;
 
 // ONE configuration, and every value in it is measured rather than guessed.
 // See SOLVER_PORT.md section 8 for the numbers behind each choice.
@@ -46,12 +46,32 @@ export const CFG = {
   // Phase 19/20 hybrid ON -- the production low-wind configuration. Without
   // it the resolved closure cannot propagate below ~3.5 m/s and the applet
   // would quietly under-predict instead of failing.
+  // EMPIRICAL FORCING REMOVED. The Phase 19/20 blend overwrote the computed
+  // v_n with the Cheney fit below 3.5 m/s and force-set T_s on particles behind
+  // the level set -- it imposed the answer rather than computing it.
+  //
+  // It is not needed on this bed. Measured bridging-energy budget for the first
+  // cell beyond the ignition patch (needs ~50 kJ/m2 = rho_b*cp*h_bed*dT + latent):
+  //
+  //   U     E_rad   E_conv   total   ignites
+  //   0.5    18.3      1.2    19.5   no
+  //   1      18.1     23.5    41.6   no
+  //   1.5    16.1     65.8    81.9   YES
+  //   2      12.4     86.4    98.8   YES
+  //
+  // So the resolved solver propagates from ~1.2 m/s, and passes the eq6 1/3..3
+  // band at 0.550 / 0.638 / 0.657 for U = 2 / 3 / 4. The 3.5 threshold came
+  // from a Nat-bed result (h_bed 0.37) and was overriding working physics.
+  //
+  // The slider therefore starts at 2 m/s -- the lowest wind with a measured
+  // passing ratio -- and everything shown is computed, not fitted.
+  //
   // a_ch = CUT, not natural. The bed here is rho_b = 1.07, h_bed = 0.10,
   // sav = 2000 -- which is Cheney 1993 *Cut* grass verbatim (see
   // Outdoor_Cheney_Cut4 deck). Feeding the natural-sward coefficient 0.406 to
   // a cut-grass bed overstated the reference ROS by 1/0.845 = 1.18x, so both
   // the empirical branch and every ratio measured against it were wrong.
-  empiricalRosEnable: true, empiricalRosACh: A_CH.cut,
+  empiricalRosEnable: false, empiricalRosACh: A_CH.cut,
   empiricalRosUThresholdMs: U_THRESH, empiricalRosBlendWidthMs: U_BLEND_W,
   // N_SUB = 1, not the upstream default of 10.
   //

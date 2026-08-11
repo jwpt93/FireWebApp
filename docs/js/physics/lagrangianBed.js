@@ -541,8 +541,15 @@ export function stepBedParticles(s, g, out, par) {
       // above wet = 1% and produced a discontinuous ignition delay (M=0%
       // igniting in 0.4 s against M=5% taking 28 s at cone density). The
       // linear gate matches cone-calorimeter t_ig(M) across the full range.
+      // moistureGateEnable=false keeps the LATENT HEAT (Q_drying still cools the
+      // particle) but removes the KINETIC suppression. The gate's own comment
+      // justifies itself partly by "cooling the particle" -- which the energy
+      // balance already does via Q_drying -- so the cooling may be counted
+      // twice. This separates the two.
       let moistGate;
-      if (mWater0 > 0.0) {
+      if (par.moistureGateEnable === false) {
+        moistGate = 1.0;
+      } else if (mWater0 > 0.0) {
         const wet = mWaterP / mWater0;
         moistGate = 1.0 - wet;
         if (moistGate < 0.0) moistGate = 0.0;

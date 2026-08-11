@@ -236,6 +236,7 @@ export function runSpread3D(cfg, onStep = null) {
     //     geometric factor (Kirchhoff reciprocity)
     // Default off: reference behaviour is preserved bit for bit.
     radiationFixes = false,
+    moistureGateEnable = true,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -624,7 +625,7 @@ export function runSpread3D(cfg, onStep = null) {
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
-        absorbGeometric: radiationFixes,
+        absorbGeometric: radiationFixes, moistureGateEnable,
         nPerCellForSplit: lagrangianBedNPerCell });
     toc('bed');
 

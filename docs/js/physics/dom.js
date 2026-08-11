@@ -44,7 +44,14 @@ const T_GAS_RAD_DT = 400.0;
 const EPS_W_GROUND = 0.85;
 const KAPPA_FLOOR = 1.0e-3;
 const A_H2O_RAD = 30.0;          // [m^2/kg] mass-specific H2O extinction
-const BETA_KSOLID_WATER = 5.0;   // wet-bed kappa_solid multiplier
+// Wet-bed kappa_solid multiplier, kappa_solid*(1 + beta*M). Phase 17a, cited
+// to Mell 2007 / Linn 2002 as an "empirical multiplier ... effective range".
+// A wetter bed absorbs MORE radiation, which partially CANCELS the latent-heat
+// penalty and flattens the net moisture response -- measured effective b_MF is
+// 0.033-0.051 against Cheney's 0.0707. Exposed so the cancellation can be
+// measured; default unchanged.
+export let BETA_KSOLID_WATER = 5.0;
+export function setBetaKSolidWater(v) { BETA_KSOLID_WATER = v; }
 
 /**
  * S4 level-symmetric ordinates (Lathrop & Carlson 1968 Table III), reflected

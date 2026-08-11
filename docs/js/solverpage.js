@@ -118,7 +118,7 @@ function start() {
     $('errtext').textContent = e.message || 'worker failed to start';
   };
 
-  worker.postMessage({ type: 'run', cfg, frameEvery: 3, zTop: 1.2 });
+  worker.postMessage({ type: 'run', cfg, frameEvery: 3, zTop: 2.7 });
 }
 
 function syncWindNote() {

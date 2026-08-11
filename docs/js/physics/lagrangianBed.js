@@ -414,6 +414,19 @@ export function aggregateParticlesToMLocalGrid(
  * @param {object} par physics parameters and toggles
  */
 export function stepBedParticles(s, g, out, par) {
+  // Kirchhoff-symmetric absorption (opt-in via par.absorbGeometric).
+  //
+  // Emission carries a depth attenuation, f_geom = exp(-kappa*(h_bed - z_p)),
+  // which is ~12% for deep particles. Absorption carries none -- Q_solid_ext is
+  // split uniformly across the n_per_cell particles in a cell. So a deep
+  // particle absorbs its full share and emits 12% of what it should, and cannot
+  // radiatively self-limit. Reciprocity requires the same geometric factor on
+  // both sides (SOLVER_PORT.md 7.8, defect 3).
+  //
+  // Fixed by weighting each particle's share of the cell's external heat by its
+  // own f_geom, NORMALISED per cell so the total delivered to the cell is
+  // unchanged. Redistribution, not attenuation -- no energy is created or lost,
+  // it just lands on the particles that can actually see the radiation.
   const { nx, ny, nz } = g;
   const nxy = ny * nx;
   const nMax = s.alive.length;
@@ -444,6 +457,22 @@ export function stepBedParticles(s, g, out, par) {
   }
 
   const invDt = dt > 0.0 ? 1.0 / dt : 0.0;
+
+  // Pre-pass: per-cell sum of f_geom over live particles, for the normalised
+  // absorption split. Only needed when both geometric flags are on.
+  const absorbGeometric = par.absorbGeometric === true && viewFactorGeometric;
+  let fGeomSum = null;
+  if (absorbGeometric) {
+    fGeomSum = new Float64Array(nCells);
+    for (let p = 0; p < nMax; p++) {
+      if (s.alive[p] === ALIVE_FALSE) continue;
+      const [i2, j2, k2] = locateCell(s.x[p], s.y[p], s.z[p], dx, dy, zFace, nz, nx, ny);
+      if (i2 < 0 || j2 < 0 || k2 < 0) continue;
+      let hA = hBed - s.z[p];
+      if (hA < 0.0) hA = 0.0;
+      fGeomSum[k2 * nxy + j2 * nx + i2] += Math.exp(-kappaBedEff * hA);
+    }
+  }
 
   for (let d = 0; d < diagMaxOut.length; d++) diagMaxOut[d] = 0.0;
   let TsMaxSeen = 0.0;
@@ -629,7 +658,13 @@ export function stepBedParticles(s, g, out, par) {
       // External cell heat (drip torch, bootstrap, radiation absorption)
       // split uniformly across the n_per_cell particles in the cell.
       let QExtP = 0.0;
-      if (nPerCellForSplit > 0) {
+      if (absorbGeometric && fGeomSum[c] > 0.0) {
+        // Share proportional to this particle's own view of the radiation
+        // field, normalised so the cell total is preserved exactly.
+        let hA0 = hBed - s.z[p];
+        if (hA0 < 0.0) hA0 = 0.0;
+        QExtP = g.Q_solid_ext[c] * vCell * (Math.exp(-kappaBedEff * hA0) / fGeomSum[c]);
+      } else if (nPerCellForSplit > 0) {
         QExtP = g.Q_solid_ext[c] * vCell / nPerCellForSplit;
       }
 

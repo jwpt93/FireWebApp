@@ -226,6 +226,15 @@ export function runSpread3D(cfg, onStep = null) {
     qRadMaxBedWm3 = Q_RAD_MAX_BED_DEFAULT,
     // Diagnostic only -- see edc.js. 0 disables (reference behaviour).
     laminarFloorSL = 0.0,
+    // Opt-in corrections to two energy-balance inconsistencies in the
+    // radiation/bed coupling (SOLVER_PORT.md 7.8, defects 3 and 4):
+    //   - feed the bed the ABSORPTION-only channel, not the net, since the
+    //     particle kernel applies its own Stefan-Boltzmann loss on top
+    //   - weight each particle's share of that absorption by its own f_geom,
+    //     normalised per cell, so absorption and emission carry the same
+    //     geometric factor (Kirchhoff reciprocity)
+    // Default off: reference behaviour is preserved bit for bit.
+    radiationFixes = false,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -365,6 +374,7 @@ export function runSpread3D(cfg, onStep = null) {
     nz, ny, nx, dx: grid.dx, dy: grid.dy, dzArr: grid.dzArr,
   });
   const qRad = zero(), qRadGas = zero();
+  const qRadAbs = radiationFixes ? zero() : null;
   const soil = buildSoilGrid(N_SOIL);
   const TSoil = new Float64Array(N_SOIL * nxy).fill(TAmb);
   const qInSoil = new Float64Array(nxy);
@@ -572,10 +582,11 @@ export function runSpread3D(cfg, onStep = null) {
     // particles heat, pyrolyse, release Y_F, the front advances.
     // The clamp is not cosmetic — q_rad reaches 2.4e7 W/m^3 at the bed top
     // and uncapped it produces a step-2 spike the coupling cannot integrate.
+    const qRadForBed = radiationFixes ? qRadAbs : qRad;
     for (let k = 0; k < nZB; k++) {
       const invDz = 1.0 / grid.dzArr[k];
       for (let s = 0; s < nxy; s++) {
-        let v = qRad[k * nxy + s] * invDz;
+        let v = qRadForBed[k * nxy + s] * invDz;
         if (v > qRadMaxBedWm3) v = qRadMaxBedWm3;
         else if (v < -qRadMaxBedWm3) v = -qRadMaxBedWm3;
         bedQsx[k * nxy + s] += v;
@@ -602,6 +613,7 @@ export function runSpread3D(cfg, onStep = null) {
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
+        absorbGeometric: radiationFixes,
         nPerCellForSplit: lagrangianBedNPerCell });
     toc('bed');
 
@@ -709,7 +721,7 @@ export function runSpread3D(cfg, onStep = null) {
       radSolver.solve({
         Ts: state.T_s, Tg: state.T_g, alphaS: state.alpha_s,
         omegaComb: omega, sigmaSav, Tamb: TAmb,
-        qRadSolidOut: qRad, qRadGasOut: qRadGas,
+        qRadSolidOut: qRad, qRadGasOut: qRadGas, qRadSolidAbsOut: qRadAbs,
         TsoilSurface: TSoilSurface, qInSoilOut: qInSoil,
         YH2O: state.Y_H2O, rho: state.rho, bedMoisturePerCell: bedMLocal,
       });

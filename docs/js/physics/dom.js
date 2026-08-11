@@ -161,10 +161,15 @@ export class DOMRadiationSolver {
    */
   solve({
     Ts, Tg, alphaS, omegaComb, sigmaSav, Tamb,
-    qRadSolidOut, qRadGasOut,
+    qRadSolidOut, qRadGasOut, qRadSolidAbsOut = null,
     TsoilSurface = null, qInSoilOut = null,
     YH2O = null, rho = null, bedMoisturePerCell = null,
   }) {
+    // qRadSolidAbsOut (optional): the ABSORPTION-only solid channel,
+    // kappa_solid * G * dz, WITHOUT the -4*pi*B emission term that
+    // qRadSolidOut carries. The bed-particle kernel applies its own
+    // Stefan-Boltzmann loss, so handing it the net value double-counts
+    // emission. See SOLVER_PORT.md 7.8 defect 4.
     const { nz, ny, nx } = this;
     const n = nz * ny * nx;
     const nxy = ny * nx;
@@ -281,6 +286,10 @@ export class DOMRadiationSolver {
         const fGas = kappa[c] > 1.0e-9 ? kappaGas[c] / kappaSafe[c] : 0.0;
         qRadSolidOut[c] = netPerHoriz * fSolid;
         qRadGasOut[c] = netPerHoriz * fGas;
+        if (qRadSolidAbsOut) {
+          // Absorption only: kappa_solid * G * dz. No -4*pi*B term.
+          qRadSolidAbsOut[c] = kappa[c] * this.G[c] * dz * fSolid;
+        }
       }
     }
 

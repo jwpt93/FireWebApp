@@ -73,6 +73,19 @@ export const E_COMB = 84000.0;      // [J/mol]
 export const R_GAS_EDC = 8.314;     // [J/mol/K]
 
 export const S_STOICH = 1.3;
+
+// ── FDS critical-flame-temperature extinction (Tech Guide 5.3.1-5.3.2) ──
+// The mixing-controlled model burns fuel and oxygen wherever they coexist,
+// "regardless of the local temperature, reactant concentration, or strain
+// rate" (FDS Tech Guide 5.3). FDS suppresses reaction in a cell when burning
+// the locally available limiting reactant cannot raise the mixture to a
+// critical flame temperature. Theory: Beyler, SFPE Handbook.
+//
+//   dT_max = dH_O2 * Y_O2,avail / cp        (dH_O2 = HOC / s_stoich)
+//   extinguish if  T_cell + dT_max < CFT
+//
+// dH_O2 = 17.0e6 / 1.3 = 13.1 MJ/kg O2, which is FDS's universal value.
+export const CFT_DEFAULT_K = 1600.0;   // [K] FDS default critical flame temp
 export const HOC_J = 17_000_000.0;   // [J/kg]
 
 /**
@@ -98,7 +111,7 @@ export function stepChemistryOdeEdc(
   rho, Tg, Yfuel, YO2, kTurb, epsTurb, chiRad, cpG, dt, nSubsteps,
   omegaIntOut, YH2O,
   { extinctionEnable = false, sStoich = S_STOICH, hocJ = HOC_J,
-    laminarFloorSL = 0.0, dxCell = 0.0, chemistryLimb = false,
+    laminarFloorSL = 0.0, dxCell = 0.0, chemistryLimb = false, omegaO2 = null, cftK = 0.0, cftFineStructure = true,
     aComb = A_COMB, eComb = E_COMB } = {},
 ) {
   // THE MISSING CHEMISTRY LIMB (default OFF; reference behaviour untouched).
@@ -205,6 +218,27 @@ export function stepChemistryOdeEdc(
           const omegaLam = (rhoI * yLim * laminarFloorSL) / dxCell;
           if (omegaLam > omega) omega = omegaLam;
         }
+        // FDS critical-flame-temperature extinction. Checked BEFORE the O2
+        // supply cap so the two are independent.
+        if (cftK > 0.0) {
+          // Apply CFT to the FINE-STRUCTURE composition, not the cell mean.
+          // EDC's premise is that reaction occurs in a small fraction
+          // gamma* of the cell where reactants are concentrated; the cell
+          // mean is diluted by the unmixed remainder. Testing the cell mean
+          // extinguishes everything (measured Y_fuel ~1e-4 is 478x too lean
+          // to reach CFT), which is an artifact of averaging a sub-grid
+          // flame over dx = 80x the fuel-element scale, not real extinction.
+          const gs = gammaStar > 1.0e-6 ? gammaStar : 1.0e-6;
+          const YfStar = cftFineStructure ? Yf / gs : Yf;
+          const yfCap = YfStar > 1.0 ? 1.0 : YfStar;
+          const dHO2 = HOC_J / sStoich;                 // [J/kg O2]
+          const yO2Avail = yfCap * sStoich < yO2 ? yfCap * sStoich : yO2;
+          if (T + (dHO2 * yO2Avail) / cpG < cftK) omega = 0.0;
+        }
+        // O2-supply limit: a cell cannot burn faster than oxygen is delivered
+        // across its faces. This is what keeps combustion OUT of a packed bed
+        // interior and puts the flame above the fuel, where air is available.
+        if (omegaO2 !== null && omegaO2[c] < omega) omega = omegaO2[c];
         if (chemistryLimb) {
           // Arrhenius ceiling, same form and constants as step_combustion.
           const kChem = aComb * Math.exp(-eComb / (R_GAS_EDC * T));

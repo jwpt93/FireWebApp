@@ -76,6 +76,26 @@ export const Y_O2_MIN_SMOLD = 0.001;
 
 export const RHO_SOLID_TRUE_GRASS = 380.0;  // [kg/m^3] Susott 1982
 export const CP_SOLID_GRASS = 1500.0;       // [J/kg/K] Mell 2007 §3.4
+
+// ── Particle-attached envelope flame ──────────────────────────────────
+// Volatiles leaving a fuel element do not mix instantly through a 0.05 m
+// cell: a diffusion flame stands off the element at a few diameters and
+// consumes part of the release at the particle scale. Spalding's spherical
+// diffusion-flame rate (Spalding 1953; Turns, An Introduction to Combustion
+// 3rd ed. Ch. 10):
+//
+//     mdot_env = 2*pi*d*rho*D*ln(1 + B)
+//
+// Only the SURPLUS (mdot_pyro - mdot_env) reaches the cell as Y_F. This is
+// the EL-native alternative to a gas-phase flamelet model: the sub-grid
+// flame is attached to the particle that feeds it, rather than reconstructed
+// from cell-mean composition -- which was measured to be 478x too lean to
+// sustain any composition-based criterion.
+//
+// B is the Spalding mass-transfer number, ~3-8 for hydrocarbon volatiles in
+// air. Default 3.0 (conservative end).
+export const SPALDING_B_DEFAULT = 3.0;
+const SC_GAS_ENV = 0.7;
 export const H_CONV_DEFAULT = 25.0;         // [W/m^2/K] grass blade, Mell 2007
 export const SAV_GRASS_DEFAULT = 2000.0;    // [1/m] Cheney 1993 fine fuel
 export const M_PARTICLE_BURNOUT = 1.0e-8;   // [kg] retire below this total mass
@@ -98,6 +118,7 @@ export const ALIVE_TRUE = 1;
 
 // Smolder flux cap [W/m^2] — gentler than char-ox by the 2/5 volumetric ratio.
 const Q_SMOLD_FLUX_MAX = 4.0e4;
+const HOC_J_ENV = 17.0e6;   // [J/kg] volatile heat of combustion, matches edc.js
 
 // ── Derived gas-particle convective coefficient ───────────────────────
 //
@@ -529,6 +550,8 @@ export function stepBedParticles(s, g, out, par) {
   // the Beer-Lambert depth term when viewFactorGeometric is on. Previously this
   // was ANDed with viewFactorGeometric, so turning the depth term off silently
   // reverted the split to uniform -- two unrelated behaviours on one flag.
+  // Spalding B for the particle-attached envelope flame; 0 disables.
+  const envelopeFlameB = par.envelopeFlameB > 0.0 ? par.envelopeFlameB : 0.0;
   const absorbMassWeighted = par.bedAbsorbMassWeighted !== undefined
     ? par.bedAbsorbMassWeighted === true
     : (par.absorbGeometric === true && viewFactorGeometric);
@@ -725,7 +748,24 @@ export function stepBedParticles(s, g, out, par) {
     // step_pyrolysis_md2004 convention.
     Q_pyro[c] += (ratePyro * (fThermal * HEAT_OF_PYROLYSIS + fOp * HOR_OP_MD2004)) * invV;
     Q_drying[c] += dmEvap * L_VAP_WATER * invDt * invV;
-    Y_F_source[c] += ETA_MD2004 * ratePyro * invV;
+    // Particle-attached envelope flame: consume part of the volatile release
+    // at the particle, pass only the surplus to the cell as gas-phase fuel.
+    let mdotVol = ETA_MD2004 * ratePyro;          // [kg/s] this particle
+    if (envelopeFlameB > 0.0 && mdotVol > 0.0) {
+      const dP = 4.0 / savP;
+      const TfilmE = Ts + (g.T_g[c] - Ts) / 3.0;
+      const rhoE = 353.0 / (TfilmE > 200.0 ? TfilmE : 200.0);
+      const nuE = NU_AIR_300 * Math.pow((TfilmE > 200.0 ? TfilmE : 200.0) / 300.0, 1.7);
+      const rhoD = (rhoE * nuE) / SC_GAS_ENV;
+      const mdotEnv = 2.0 * Math.PI * dP * rhoD * Math.log(1.0 + envelopeFlameB);
+      const mdotBurn = mdotEnv < mdotVol ? mdotEnv : mdotVol;
+      // Heat released into the GAS of this cell. The particle gets its share
+      // back through the existing convective coupling, so no new free
+      // parameter for the flame-to-particle split.
+      Q_char[c] += (mdotBurn * HOC_J_ENV) * invV;
+      mdotVol -= mdotBurn;
+    }
+    Y_F_source[c] += mdotVol * invV;
     // Char-ox and smolder heat release: POSITIVE = released to gas, matching
     // the Eulerian step_char_oxidation / step_smoldering_oxidation sign.
     Q_char[c] += QCharOxP * invV;

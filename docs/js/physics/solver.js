@@ -48,7 +48,7 @@ import {
 } from './kepsilon.js';
 import { applyTurbulentDiffusion, SC_T, PR_T } from './turbulentDiffusion.js';
 import { DOMRadiationSolver } from './dom.js';
-import { stepChemistryOdeEdc } from './edc.js';
+import { stepChemistryOdeEdc, S_STOICH as S_STOICH_EDC } from './edc.js';
 import { stepSpeciesTransport } from './species.js';
 import { stepSolidConductionVertical, K_SOLID_GRASS } from './solidConduction.js';
 import {
@@ -256,6 +256,26 @@ export function runSpread3D(cfg, onStep = null) {
     // cells keep absorbing full volumetric kappa*G into a collapsed particle
     // area, and stay optically thick to fuel ahead.
     bedAlphaSFromParticles = false,
+    // DOM angular quadrature order (S_N). 4 = 24 ordinates (legacy default).
+    // Higher orders reduce the ray effect -- the artifact where a localised
+    // source illuminates only along discrete directions and misses cells
+    // between them.
+    domQuadratureOrder = 4,
+    // Apply the O2 mass-flux supply limit to the combustion rate. Upstream
+    // computes this (combustion_3d.step_o2_supply_rate) and DISCARDS it -- the
+    // EDC closure never consumes omega_O2, so nothing stops a packed bed
+    // interior burning as fast as it pyrolyses. With the limit on, the bed
+    // interior is oxygen-starved and the flame sits ABOVE the fuel.
+    o2SupplyLimitEnable = false,
+    // FDS critical-flame-temperature extinction (Tech Guide 5.3). 0 = off
+    // (legacy: burn wherever fuel and O2 coexist). 1600 K = FDS default.
+    cftExtinctionK = 0.0,
+    // Test CFT against the EDC fine-structure composition (Y_f/gamma*) rather
+    // than the cell mean. false = cell mean (extinguishes everything here).
+    cftFineStructure = true,
+    // Particle-attached envelope flame (Spalding). 0 = off. 3-8 is the
+    // literature range for hydrocarbon volatiles in air.
+    envelopeFlameB = 0.0,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -403,11 +423,13 @@ export function runSpread3D(cfg, onStep = null) {
 
   const radSolver = new DOMRadiationSolver({
     nz, ny, nx, dx: grid.dx, dy: grid.dy, dzArr: grid.dzArr,
+    nQuadrature: domQuadratureOrder,
     ...(domGasAbsorptionMaxPerM !== null
         ? { kappaGasMax: domGasAbsorptionMaxPerM } : {}),
     solidExtinctionOrientationFactor: domSolidExtinctionOrientationFactor,
   });
   const qRad = zero(), qRadGas = zero();
+  const omegaO2Buf = zero();
   const qRadAbs = radiationFixes ? zero() : null;
   const soil = buildSoilGrid(N_SOIL);
   const TSoil = new Float64Array(N_SOIL * nxy).fill(TAmb);
@@ -653,7 +675,7 @@ export function runSpread3D(cfg, onStep = null) {
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
-        absorbGeometric: radiationFixes, bedAbsorbMassWeighted, moistureGateEnable, hConvDerive, hConvRanzMarshall,
+        absorbGeometric: radiationFixes, bedAbsorbMassWeighted, envelopeFlameB, moistureGateEnable, hConvDerive, hConvRanzMarshall,
         nPerCellForSplit: lagrangianBedNPerCell });
     toc('bed');
 
@@ -848,9 +870,34 @@ export function runSpread3D(cfg, onStep = null) {
       // behaviours that affect results, this is arithmetic whose output is
       // provably dropped on the floor. See SOLVER_PORT.md 7.7 -- upstream is
       // spending ~20 full-field passes per step on it.
+      if (o2SupplyLimitEnable) {
+        // omega_O2 = sum over 6 faces of max(0, rho_up * u_face) * Y_O2_up / D,
+        // divided by the stoichiometric ratio -> fuel-equivalent supply rate.
+        // Mirrors combustion_3d.step_o2_supply_rate.
+        for (let k = 0; k < nz; k++) {
+          for (let j = 0; j < ny; j++) {
+            for (let i = 0; i < nx; i++) {
+              const c = (k * ny + j) * nx + i;
+              let sm = 0.0;
+              const uw = state.u[c], ue = state.u[c];
+              if (i > 0)      { const cu = c - 1; const f = state.u[cu];
+                if (f > 0) sm += state.rho[cu] * f * state.Y_O2[cu] / grid.dx; }
+              if (i < nx - 1) { const cu = c + 1; const f = -state.u[cu];
+                if (f > 0) sm += state.rho[cu] * f * state.Y_O2[cu] / grid.dx; }
+              if (k > 0)      { const cu = c - nx * ny; const f = state.w[cu];
+                if (f > 0) sm += state.rho[cu] * f * state.Y_O2[cu] / grid.dzArr[k]; }
+              if (k < nz - 1) { const cu = c + nx * ny; const f = -state.w[cu];
+                if (f > 0) sm += state.rho[cu] * f * state.Y_O2[cu] / grid.dzArr[k]; }
+              omegaO2Buf[c] = sm / S_STOICH_EDC;
+            }
+          }
+        }
+      }
       stepChemistryOdeEdc(state.rho, state.T_g, state.Y_fuel, state.Y_O2,
         kTurb, epsTurb, chiRad, CP_GAS_DRY, dtSub, 1, omega, state.Y_H2O,
-        { ...shape, laminarFloorSL, dxCell: grid.dx, chemistryLimb });
+        { ...shape, laminarFloorSL, dxCell: grid.dx, chemistryLimb,
+          omegaO2: o2SupplyLimitEnable ? omegaO2Buf : null,
+          cftK: cftExtinctionK, cftFineStructure });
       // Chemistry already updated T_g, so Q_comb starts clean.
       QComb.fill(0.0);
 
@@ -875,7 +922,12 @@ export function runSpread3D(cfg, onStep = null) {
       // the mass fractions of the others.
       for (let c = 0; c < n; c++) {
         const sTotal = bedSp[c] + bedSd[c];
-        SFeff[c] = bedSp[c] - state.Y_fuel[c] * sTotal;
+        // Fuel source is Y_F_source, not S_pyro. They are identical unless the
+        // particle-attached envelope flame is on, in which case Y_F_source
+        // carries only the SURPLUS volatiles that escape the particle. S_pyro
+        // remains the full MASS source (burnt volatiles still enter the gas as
+        // products), so continuity is untouched.
+        SFeff[c] = bedYFs[c] - state.Y_fuel[c] * sTotal;
         SO2eff[c] = -state.Y_O2[c] * sTotal;
         SH2Oeff[c] = bedSd[c] - state.Y_H2O[c] * sTotal;
       }
@@ -1035,9 +1087,9 @@ export function runSpread3D(cfg, onStep = null) {
     if (onStep && onStep({
       step, t, dt, frontX: newFront, projDivMax, projNIter,
       nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad, qRadAbs, omega,
-      sPyroField: bedSp,
+      sPyroField: bedSp, yfSourceField: bedYFs, qCharField: bedQch,
       sPyroMax: (() => { let m = 0; for (let c = 0; c < n; c++) if (bedSp[c] > m) m = bedSp[c]; return m; })(),
-      TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame,
+      TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame, radSolver,
     }) === false) break;
 
     // Extinction: no flame body for 50 consecutive steps, once past ignition

@@ -244,6 +244,9 @@ export function runSpread3D(cfg, onStep = null) {
     // at the top of that range (KAPPA_SOOT_HOT = 0.5 1/m). Diagnostic override
     // only -- null keeps dom.js's own cited default.
     domGasAbsorptionMaxPerM = null,
+    // 0.25 = Cauchy mean-projected-area factor (geometrically correct);
+    // 1.0 = historic behaviour. See dom.js.
+    domSolidExtinctionOrientationFactor = 1.0,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -393,6 +396,7 @@ export function runSpread3D(cfg, onStep = null) {
     nz, ny, nx, dx: grid.dx, dy: grid.dy, dzArr: grid.dzArr,
     ...(domGasAbsorptionMaxPerM !== null
         ? { kappaGasMax: domGasAbsorptionMaxPerM } : {}),
+    solidExtinctionOrientationFactor: domSolidExtinctionOrientationFactor,
   });
   const qRad = zero(), qRadGas = zero();
   const qRadAbs = radiationFixes ? zero() : null;

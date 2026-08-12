@@ -139,7 +139,15 @@ export class DOMRadiationSolver {
   constructor({ nz, ny, nx, dx, dy, dzArr, yBc = 'periodic', nQuadrature = 4,
                 epsWGround = EPS_W_GROUND, maxSourceIter = 30,
                 tolSourceIter = 1.0e-3, omegaRelax = 0.7,
-                kappaGasMax = KAPPA_SOOT_HOT }) {
+                kappaGasMax = KAPPA_SOOT_HOT,
+                // Mean-projected-area factor for the SOLID (bed) extinction
+                // coefficient. Bed extinction is geometric obstruction, not
+                // molecular absorption: for randomly oriented convex particles
+                // Cauchy's theorem gives mean projected area = 1/4 of surface
+                // area, so kappa_solid = sigma*beta/4 [1/m]. Historic code used
+                // 1.0 (no orientation average). Default preserves that; set
+                // 0.25 for the geometrically correct value.
+                solidExtinctionOrientationFactor = 1.0 }) {
     this.nz = nz; this.ny = ny; this.nx = nx;
     this.dx = dx; this.dy = dy;
     this.dzArr = Float64Array.from(dzArr);
@@ -149,6 +157,7 @@ export class DOMRadiationSolver {
     this.tol = tolSourceIter;
     this.omegaRelax = omegaRelax;
     this.kappaGasMax = kappaGasMax;
+    this.solidExtinctionOrientationFactor = solidExtinctionOrientationFactor;
 
     const q = generateSnOrdinates(nQuadrature);
     this.Omega = q.omega;
@@ -189,7 +198,7 @@ export class DOMRadiationSolver {
     const B = new Float64Array(n);
 
     for (let c = 0; c < n; c++) {
-      let ks = sigmaSav * alphaS[c];
+      let ks = sigmaSav * alphaS[c] * this.solidExtinctionOrientationFactor;
       if (bedMoisturePerCell) ks *= 1.0 + BETA_KSOLID_WATER * bedMoisturePerCell[c];
       kappaSolid[c] = ks;
 

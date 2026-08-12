@@ -634,7 +634,12 @@ export function runSpread3D(cfg, onStep = null) {
         // kappa ~ sav * alpha_s with alpha_s = rho_b/rho_solid_true. For
         // grass that is 2000 * 1.07/380 ~ 5.6 1/m, so kappa*h_bed ~ 2.1 and
         // the deepest particles emit ~12% of what surface particles do.
-        kappaBedEff: (sigmaSav * rhoB) / lagrangianBedRhoSolidTrue,
+        // Same solid extinction coefficient the DOM uses, so the orientation
+        // factor MUST be applied here too -- lowering it in only one place
+        // reduces absorption while leaving emission attenuated, which is a
+        // net heating error rather than a fix.
+        kappaBedEff: ((sigmaSav * rhoB) / lagrangianBedRhoSolidTrue)
+                     * domSolidExtinctionOrientationFactor,
         dt,
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,

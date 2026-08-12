@@ -238,6 +238,7 @@ export function runSpread3D(cfg, onStep = null) {
     radiationFixes = false,
     moistureGateEnable = true,
     hConvDerive = false,
+    hConvRanzMarshall = false,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -627,7 +628,7 @@ export function runSpread3D(cfg, onStep = null) {
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
-        absorbGeometric: radiationFixes, moistureGateEnable, hConvDerive,
+        absorbGeometric: radiationFixes, moistureGateEnable, hConvDerive, hConvRanzMarshall,
         nPerCellForSplit: lagrangianBedNPerCell });
     toc('bed');
 

@@ -125,16 +125,43 @@ const PR_AIR = 0.71;
 const PR13 = Math.cbrt(PR_AIR);
 
 /** Convective coefficient for a blade of surface-to-volume ratio sav. */
-export function hConvDerived(uMag, sav, Tg, Ts) {
+// Convective coefficient for a vegetation element, following FDS 6 exactly.
+//
+//   h = (k/L) * max(Nu_free, Nu_forced)                 FDS Tech Guide Eq. 7.15
+//   Nu_forced = C0 + (C1*Re^n - C2) * Pr^(1/3)          Eq. 7.18, Table 7.1
+//   Nu_free   = (0.60 + 0.321*Ra^(1/6))^2  (horiz. cyl) Eq. 7.17
+//   Ranz-Marshall particle form, Nu = 2 + 0.6*Re^0.5*Pr^(1/3)   Eq. 9.33
+//
+// Properties at the film temperature T_f = T_s + (T_g - T_s)/3  (Eq. 9.33),
+// NOT the arithmetic mean -- the 1/3 weighting is toward the solid.
+// L = d = 4/sav for a cylindrical element.
+//
+// The +2 / C0 conduction floor dominates below Re ~ 40, which is the entire
+// in-bed regime for grass (Re = 3-50).  Omitting it halves h.
+function nuForcedCyl(Re) {
+  // FDS Table 7.1, cylinder rows (C0 = C2 = 0 for all of them).
+  let C1, n;
+  if (Re < 4.0) { C1 = 0.989; n = 0.330; }
+  else if (Re < 40.0) { C1 = 0.911; n = 0.385; }
+  else if (Re < 4000.0) { C1 = 0.683; n = 0.466; }
+  else { C1 = 0.193; n = 0.618; }
+  return C1 * Math.pow(Re, n) * PR13;
+}
+
+export function hConvDerived(uMag, sav, Tg, Ts, useRanzMarshall = false) {
   const d = 4.0 / sav;
-  const Tf = 0.5 * (Tg + Ts);
-  const s = Tf / 300.0;
+  const Tf = Ts + (Tg - Ts) / 3.0;
+  const s = Math.max(Tf, 200.0) / 300.0;
   const k = K_AIR_300 * Math.pow(s, 0.8);
   const nu = NU_AIR_300 * Math.pow(s, 1.7);
   const Re = (Math.abs(uMag) * d) / nu;
-  if (!(Re > 0.0)) return 0.0;
-  const Nu = 0.51 * Math.sqrt(Re) * PR13;
-  return (Nu * k) / d;
+  const alpha = nu / PR_AIR;
+  const Ra = (2.0 * 9.81 * Math.abs(Tg - Ts) * d * d * d) / ((Tg + Ts) * nu * alpha);
+  const nuFree = Math.pow(0.60 + 0.321 * Math.pow(Math.max(Ra, 0.0), 1.0 / 6.0), 2.0);
+  const nuForced = Re > 0.0
+    ? (useRanzMarshall ? 2.0 + 0.6 * Math.sqrt(Re) * PR13 : nuForcedCyl(Re))
+    : (useRanzMarshall ? 2.0 : 0.0);
+  return (Math.max(nuFree, nuForced) * k) / d;
 }
 
 // ── Cell location ─────────────────────────────────────────────────────
@@ -542,7 +569,7 @@ export function stepBedParticles(s, g, out, par) {
     // the bed depth and collapses behind the front, unlike the deck constant.
     const hConvCell = par.hConvDerive === true
       ? hConvDerived(Math.hypot(g.u[c], g.v[c], g.w[c]), s.sav[p],
-                     g.T_g[c], s.T_s[p])
+                     g.T_g[c], s.T_s[p], par.hConvRanzMarshall === true)
       : hConv;
     let Ts = s.T_s[p];
     const Tg = g.T_g[c];

@@ -239,6 +239,11 @@ export function runSpread3D(cfg, onStep = null) {
     moistureGateEnable = true,
     hConvDerive = false,
     hConvRanzMarshall = false,
+    // kappa_gas_max: hot-gas (soot + CO2 + H2O) absorption/emission coefficient
+    // at flame temperature. Tien (1968) gives 0.05-0.5 1/m; dom.js already sits
+    // at the top of that range (KAPPA_SOOT_HOT = 0.5 1/m). Diagnostic override
+    // only -- null keeps dom.js's own cited default.
+    domGasAbsorptionMaxPerM = null,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -386,6 +391,8 @@ export function runSpread3D(cfg, onStep = null) {
 
   const radSolver = new DOMRadiationSolver({
     nz, ny, nx, dx: grid.dx, dy: grid.dy, dzArr: grid.dzArr,
+    ...(domGasAbsorptionMaxPerM !== null
+        ? { kappaGasMax: domGasAbsorptionMaxPerM } : {}),
   });
   const qRad = zero(), qRadGas = zero();
   const qRadAbs = radiationFixes ? zero() : null;

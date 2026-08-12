@@ -101,24 +101,17 @@ const Q_SMOLD_FLUX_MAX = 4.0e4;
 
 // ── Derived gas-particle convective coefficient ───────────────────────
 //
-// h_conv is normally a deck CONSTANT (production uses 250 W/m^2/K at every
-// wind). That is 2.5x above the range this module's own H_CONV_DEFAULT comment
-// cites -- "lit-bracketed 10-100 W/m^2/K depending on wind" (Mell 2007) -- and
-// it does not vary with wind, though forced convection gives Nu ~ Re^0.5 so it
-// should scale as sqrt(u).
+// h_conv is normally a deck CONSTANT (production uses 250 W/m^2/K). Checked
+// against FDS 6, that value is SOUND for real grass SAV -- an earlier claim
+// here that it was 2.5x too high was WRONG and is retracted; the derivation
+// behind it omitted the conduction floor, used a coefficient absent from FDS
+// Table 7.1, had no natural-convection branch, and used the wrong film
+// temperature. See hConvDerived below for the correct FDS formulation.
 //
-// Everything needed to derive it is already in the solver: local gas speed per
-// cell, sav per particle, and gas properties. Treating a grass blade as a
-// cylinder in cross-flow with characteristic dimension d = 4/sav:
+// Note h = 250 is only defensible together with a CORRECTED sav: for the
+// sav = 2000 in the decks it is 1.3-5.5x high at every velocity, while for
+// sav = 6562 it sits in range at Cheney's winds.
 //
-//     Re = |u|·d/nu      Nu = 0.51·Re^0.5·Pr^(1/3)      h = Nu·k/d
-//
-// Properties at the film temperature T_f = (T_g + T_s)/2, with the standard
-// air scalings k ~ T^0.8 and nu ~ T^1.7 about their 300 K values.
-//
-// Zuber/Hilpert cylinder cross-flow, C = 0.51 and m = 0.5 for Re = 40-4000
-// (Incropera & DeWitt, Table 7.2), which brackets the Re = 100-600 a grass
-// blade sees in-bed at 1-4 m/s.
 const K_AIR_300 = 0.0263;     // [W/m/K]
 const NU_AIR_300 = 1.57e-5;   // [m^2/s]
 const PR_AIR = 0.71;
@@ -531,7 +524,15 @@ export function stepBedParticles(s, g, out, par) {
 
   // Pre-pass: per-cell sum of f_geom over live particles, for the normalised
   // absorption split. Only needed when both geometric flags are on.
-  const absorbGeometric = par.absorbGeometric === true && viewFactorGeometric;
+  // Mass-weighted absorption split. Independent of viewFactorGeometric: the
+  // weight is the particle's own absorption area A_p, optionally multiplied by
+  // the Beer-Lambert depth term when viewFactorGeometric is on. Previously this
+  // was ANDed with viewFactorGeometric, so turning the depth term off silently
+  // reverted the split to uniform -- two unrelated behaviours on one flag.
+  const absorbMassWeighted = par.bedAbsorbMassWeighted !== undefined
+    ? par.bedAbsorbMassWeighted === true
+    : (par.absorbGeometric === true && viewFactorGeometric);
+  const absorbGeometric = absorbMassWeighted;
   let fGeomSum = null;
   if (absorbGeometric) {
     fGeomSum = new Float64Array(nCells);
@@ -752,8 +753,8 @@ export function stepBedParticles(s, g, out, par) {
         // NOTE: uses the PRE-step masses, matching the pre-pass sum, so the
         // per-cell weights are consistent and the normalisation is exact.
         const apAbs = (savP * (s.m_solid[p] + s.m_char[p])) / rhoSolidTrue;
-        QExtP = g.Q_solid_ext[c] * vCell
-              * ((apAbs * Math.exp(-kappaBedEff * hA0)) / fGeomSum[c]);
+        const depthW = viewFactorGeometric ? Math.exp(-kappaBedEff * hA0) : 1.0;
+        QExtP = g.Q_solid_ext[c] * vCell * ((apAbs * depthW) / fGeomSum[c]);
       } else if (nPerCellForSplit > 0) {
         QExtP = g.Q_solid_ext[c] * vCell / nPerCellForSplit;
       }

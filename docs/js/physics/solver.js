@@ -54,7 +54,7 @@ import { stepSolidConductionVertical, K_SOLID_GRASS } from './solidConduction.js
 import {
   allocateBedParticleBuffers, initializeBedParticlesFromAlphaS,
   stepBedParticles, aggregateParticlesToTsGrid,
-  aggregateParticlesToMLocalGrid, stepHorizontalSolidConductionScatter,
+  aggregateParticlesToMLocalGrid, stepHorizontalSolidConductionScatter, locateCell,
   DRY_MODE_ARRHENIUS, DRY_MODE_EQUILIBRIUM, DRY_MODE_COMBINED,
   RHO_SOLID_TRUE_GRASS, CP_SOLID_GRASS, SAV_GRASS_DEFAULT,
   EPS_SOLID_DEFAULT, T_BOIL_WATER, ALIVE_FALSE, ALIVE_TRUE,
@@ -247,6 +247,15 @@ export function runSpread3D(cfg, onStep = null) {
     // 0.25 = Cauchy mean-projected-area factor (geometrically correct);
     // 1.0 = historic behaviour. See dom.js.
     domSolidExtinctionOrientationFactor = 1.0,
+    // Mass-weighted radiation split across particles in a cell. undefined =
+    // legacy behaviour (radiationFixes AND viewFactorGeometric). Now settable
+    // independently of the depth term.
+    bedAbsorbMassWeighted = undefined,
+    // Rebuild alpha_s (bed packing ratio) from LIVE particle mass each step.
+    // Off = legacy: alpha_s is frozen at its initial value forever, so burnt-out
+    // cells keep absorbing full volumetric kappa*G into a collapsed particle
+    // area, and stay optically thick to fuel ahead.
+    bedAlphaSFromParticles = false,
   } = cfg;
 
   // ── Grid + state ────────────────────────────────────────────────────
@@ -644,7 +653,7 @@ export function runSpread3D(cfg, onStep = null) {
         doDrying: lagrangianBedDoDrying, doPyrolysis: lagrangianBedDoPyrolysis,
         doCharOx: lagrangianBedDoCharOx, doSmolder: lagrangianBedDoSmolder,
         dryingMode, charOxFluxCapWm2, charOxAshExp,
-        absorbGeometric: radiationFixes, moistureGateEnable, hConvDerive, hConvRanzMarshall,
+        absorbGeometric: radiationFixes, bedAbsorbMassWeighted, moistureGateEnable, hConvDerive, hConvRanzMarshall,
         nPerCellForSplit: lagrangianBedNPerCell });
     toc('bed');
 
@@ -749,6 +758,20 @@ export function runSpread3D(cfg, onStep = null) {
       aggregateParticlesToMLocalGrid(bed.x, bed.y, bed.z, bed.alive,
         bed.m_solid, bed.m_water, grid.dx, grid.dy, grid.zFace, bedMLocal, shape);
       for (let s = 0; s < nxy; s++) TSoilSurface[s] = TSoil[s];
+      if (bedAlphaSFromParticles && bed) {
+        // alpha_s = sum(m_solid + m_char) / (rho_true * V_cell), per cell.
+        state.alpha_s.fill(0.0);
+        for (let q = 0; q < nMaxParticles; q++) {
+          if (bed.alive[q] === 0) continue;
+          const [bi, bj, bk] = locateCell(bed.x[q], bed.y[q], bed.z[q],
+                                          grid.dx, grid.dy, grid.zFace, nz, nx, ny);
+          if (bi < 0 || bj < 0 || bk < 0) continue;
+          const cc = (bk * ny + bj) * nx + bi;
+          state.alpha_s[cc] += (bed.m_solid[q] + bed.m_char[q])
+                             / (lagrangianBedRhoSolidTrue
+                                * grid.dx * grid.dy * grid.dzArr[bk]);
+        }
+      }
       radSolver.solve({
         Ts: state.T_s, Tg: state.T_g, alphaS: state.alpha_s,
         omegaComb: omega, sigmaSav, Tamb: TAmb,
@@ -1011,7 +1034,7 @@ export function runSpread3D(cfg, onStep = null) {
 
     if (onStep && onStep({
       step, t, dt, frontX: newFront, projDivMax, projNIter,
-      nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad, omega,
+      nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad, qRadAbs, omega,
       sPyroField: bedSp,
       sPyroMax: (() => { let m = 0; for (let c = 0; c < n; c++) if (bedSp[c] > m) m = bedSp[c]; return m; })(),
       TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame,

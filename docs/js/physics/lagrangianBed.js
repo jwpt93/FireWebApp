@@ -95,6 +95,22 @@ export const CP_SOLID_GRASS = 1500.0;       // [J/kg/K] Mell 2007 §3.4
 // B is the Spalding mass-transfer number, ~3-8 for hydrocarbon volatiles in
 // air. Default 3.0 (conservative end).
 export const SPALDING_B_DEFAULT = 3.0;
+
+// ── Volatile blowing suppression: IMPLEMENTED, MEASURED, REMOVED ──────
+// Hypothesis was that pyrolysis and char oxidation run CONCURRENTLY above
+// ~600 K, so outflowing volatiles should suppress O2 transport to the surface
+// (Spalding 1953; Field 1967; Baum & Street 1971):
+//     B_blow = mdot_vol/(h_m*A_p) ;  factor = ln(1+B)/B
+//
+// MEASURED CENSUS (U=2, 650 samples, per particle-step):
+//     both active together   0.6%
+//     pyrolysis only        54.7%
+//     char oxidation only   44.7%
+//
+// The model ALREADY sequences them -- flaming then glowing. There is no
+// overlap to suppress, so B_blow ~ 0 and the correction is identically 1.
+// Verified inert both before and after the Williams flux cap. Removed rather
+// than shipped as dead code. Do not re-add without re-running that census.
 const SC_GAS_ENV = 0.7;
 export const H_CONV_DEFAULT = 25.0;         // [W/m^2/K] grass blade, Mell 2007
 export const SAV_GRASS_DEFAULT = 2000.0;    // [1/m] Cheney 1993 fine fuel
@@ -708,6 +724,11 @@ export function stepBedParticles(s, g, out, par) {
       const QCapPart = charOxFluxCapWm2 * AReactive;
       const QArrhPart = (mConsCh * HOC_CHAR) * invDt;
       if (QArrhPart > QCapPart) mConsCh = QCapPart / (HOC_CHAR * invDt);
+      // Blowing applies to the FINAL rate. It restricts O2 transport to the
+      // surface, so it bounds the oxidation whether that oxidation is
+      // kinetics-limited or sitting on the Williams flux cap. Applying it to
+      // the Arrhenius rate alone was inert: the rate runs ~200x above the cap,
+      // so a 19x suppression still left the cap governing.
       dmCharOx = mConsCh;
       QCharOxP = (dmCharOx * HOC_CHAR) * invDt;
       mCharP -= dmCharOx;

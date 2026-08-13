@@ -1098,6 +1098,7 @@ export function runSpread3D(cfg, onStep = null) {
       nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad, qRadAbs, omega,
       sPyroField: bedSp, yfSourceField: bedYFs, qCharField: bedQch,
       kTurbField: kTurb, epsTurbField: epsTurb, TSoilField: TSoil, soilGrid: soil,
+      bed, nAllocBed: nAlloc,
       sPyroMax: (() => { let m = 0; for (let c = 0; c < n; c++) if (bedSp[c] > m) m = bedSp[c]; return m; })(),
       TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame, radSolver,
     }) === false) break;

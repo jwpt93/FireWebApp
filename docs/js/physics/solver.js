@@ -273,6 +273,12 @@ export function runSpread3D(cfg, onStep = null) {
     // Test CFT against the EDC fine-structure composition (Y_f/gamma*) rather
     // than the cell mean. false = cell mean (extinguishes everything here).
     cftFineStructure = true,
+    // Diagnostic: adiabatic domain floor. Ground becomes a perfect reflector
+    // (eps_w_ground = 0, so it absorbs no radiation) and soil conduction is
+    // skipped, so the ground is neither a radiative nor a conductive sink.
+    // Isolates how much of the energy delivered to unburnt fuel is lost to
+    // the ground rather than heating fuel.
+    adiabaticFloor = false,
     // Particle-attached envelope flame (Spalding). 0 = off. 3-8 is the
     // literature range for hydrocarbon volatiles in air.
     envelopeFlameB = 0.0,
@@ -424,6 +430,7 @@ export function runSpread3D(cfg, onStep = null) {
   const radSolver = new DOMRadiationSolver({
     nz, ny, nx, dx: grid.dx, dy: grid.dy, dzArr: grid.dzArr,
     nQuadrature: domQuadratureOrder,
+    ...(adiabaticFloor ? { epsWGround: 0.0 } : {}),
     ...(domGasAbsorptionMaxPerM !== null
         ? { kappaGasMax: domGasAbsorptionMaxPerM } : {}),
     solidExtinctionOrientationFactor: domSolidExtinctionOrientationFactor,
@@ -802,8 +809,10 @@ export function runSpread3D(cfg, onStep = null) {
         YH2O: state.Y_H2O, rho: state.rho, bedMoisturePerCell: bedMLocal,
       });
     }
-    stepSoilConduction(TSoil, qInSoil, dt, soil.soilDz, soil.dAbove, soil.dBelow,
-      { nx, ny, nSoil: N_SOIL, Tamb: TAmb });
+    if (!adiabaticFloor) {
+      stepSoilConduction(TSoil, qInSoil, dt, soil.soilDz, soil.dAbove, soil.dBelow,
+        { nx, ny, nSoil: N_SOIL, Tamb: TAmb });
+    }
     toc('radiation+soil');
 
     // 9. Ignition pulse as an external FLUX on the top bed layer, not a T_s
@@ -1088,6 +1097,7 @@ export function runSpread3D(cfg, onStep = null) {
       step, t, dt, frontX: newFront, projDivMax, projNIter,
       nAlive: nAliveOut[0], nBurned: nBurnedOut[0], qRad, qRadAbs, omega,
       sPyroField: bedSp, yfSourceField: bedYFs, qCharField: bedQch,
+      kTurbField: kTurb, epsTurbField: epsTurb, TSoilField: TSoil, soilGrid: soil,
       sPyroMax: (() => { let m = 0; for (let c = 0; c < n; c++) if (bedSp[c] > m) m = bedSp[c]; return m; })(),
       TgMax, TsMax: diagMax[0], grid, state, lset, phiFlame, radSolver,
     }) === false) break;
